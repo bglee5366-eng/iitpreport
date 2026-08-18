@@ -25,10 +25,10 @@ const sourceOptions = [
 
 const defaultSources = sourceOptions.map((source) => source.id);
 
-function ProviderResultCard({ name, result }: { name: string; result: ProviderResult }) {
+function ProviderResultCard({ name, result, copied, onCopy }: { name: string; result: ProviderResult; copied: boolean; onCopy: () => void }) {
   return (
     <article className={`provider-result ${result.status}`}>
-      <div className="provider-result-heading"><div><span className="step-label">{name === "OpenAI" ? "OPENAI WEB SEARCH" : "GEMINI GOOGLE SEARCH"}</span><h3>{name}</h3></div><span className="provider-status">{result.status === "success" ? `성공 · ${result.responseMs ?? 0}ms` : result.status === "skipped" ? "키 미입력" : "호출 실패"}</span></div>
+      <div className="provider-result-heading"><div><span className="step-label">{name === "OpenAI" ? "OPENAI WEB SEARCH" : "GEMINI GOOGLE SEARCH"}</span><h3>{name}</h3></div><div className="provider-result-actions">{result.status === "success" && <button type="button" className="copy-button" onClick={onCopy}>{copied ? "복사 완료" : "결과 복사"}</button>}<span className="provider-status">{result.status === "success" ? `성공 · ${result.responseMs ?? 0}ms` : result.status === "skipped" ? "키 미입력" : "호출 실패"}</span></div></div>
       {result.status === "success" ? <>
         {result.warning && <div className="provider-warning">{result.warning}</div>}
         <div className="provider-report-text">{result.text}</div>
@@ -54,6 +54,7 @@ export default function Home() {
   const [templateFileName, setTemplateFileName] = useState("");
   const [templateMarkdown, setTemplateMarkdown] = useState("");
   const [templateError, setTemplateError] = useState("");
+  const [copiedResult, setCopiedResult] = useState("");
 
   useEffect(() => {
     const storedOpenAIKey = sessionStorage.getItem(OPENAI_SESSION_KEY) ?? "";
@@ -160,6 +161,39 @@ export default function Home() {
     setTemplateMarkdown("");
     setTemplateError("");
     setApiError("");
+    setCopiedResult("");
+  }
+
+  async function copyText(text: string, label: string) {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand("copy");
+        textarea.remove();
+      }
+      setCopiedResult(label);
+      window.setTimeout(() => setCopiedResult((current) => current === label ? "" : current), 1800);
+    } catch {
+      setApiError("결과를 클립보드에 복사하지 못했습니다. 브라우저의 클립보드 권한을 확인해주세요.");
+    }
+  }
+
+  function providerCopyText(name: string, result: ProviderResult) {
+    const sources = result.sources.length ? `\n\n참고 출처\n${result.sources.map((source, index) => `[${index + 1}] ${source.title}\n${source.url}`).join("\n")}` : "";
+    return `${name}\n\n${result.text ?? ""}${sources}`.trim();
+  }
+
+  function allResultsCopyText() {
+    if (!searchResults) return "";
+    return [providerCopyText("OpenAI", searchResults.openai), providerCopyText("Gemini", searchResults.gemini)].join("\n\n====================\n\n");
   }
 
   return (
@@ -207,8 +241,8 @@ export default function Home() {
           <p className="helper-text">현재는 예시 결과가 표시됩니다. API 연결 후 실시간 검색이 지원됩니다.</p>
         </form>
         <section className="result-card" aria-live="polite">
-          <div className="result-header"><div><span className="step-label">RESULT</span><h2>생성 결과</h2></div><span className="preview-badge">PREVIEW</span></div>
-          {!generated ? <div className="empty-state"><div className="empty-icon">✦</div><h3>보고서 초안이 이곳에 나타납니다</h3><p>왼쪽에서 이슈와 조건을 설정한 뒤<br />생성 버튼을 눌러보세요.</p><div className="empty-line" /><span>OpenAI·Gemini 검색 결과가 각각 표시됩니다</span></div> : searchStatus === "loading" ? <div className="empty-state loading-state"><div className="empty-icon">⌁</div><h3>두 검색 엔진에서 자료를 찾고 있습니다</h3><p>OpenAI Web Search와 Gemini Google Search를<br />가능한 경우 동시에 호출합니다.</p><span className="loading-note">최대 120초까지 걸릴 수 있습니다.</span></div> : searchResults ? <div className="provider-results"><ProviderResultCard name="OpenAI" result={searchResults.openai} /><ProviderResultCard name="Gemini" result={searchResults.gemini} /></div> : <div className="empty-state"><div className="empty-icon">!</div><h3>검색 결과를 표시할 수 없습니다</h3><p>왼쪽 오류 안내를 확인한 뒤 다시 시도해주세요.</p></div>}
+          <div className="result-header"><div><span className="step-label">RESULT</span><h2>생성 결과</h2></div>{searchResults ? <div className="result-header-actions"><button type="button" className="copy-all-button" onClick={() => void copyText(allResultsCopyText(), "all")}>{copiedResult === "all" ? "전체 복사 완료" : "전체 결과 복사"}</button><span className="preview-badge">PREVIEW</span></div> : <span className="preview-badge">PREVIEW</span>}</div>
+          {!generated ? <div className="empty-state"><div className="empty-icon">✦</div><h3>보고서 초안이 이곳에 나타납니다</h3><p>왼쪽에서 이슈와 조건을 설정한 뒤<br />생성 버튼을 눌러보세요.</p><div className="empty-line" /><span>OpenAI·Gemini 검색 결과가 각각 표시됩니다</span></div> : searchStatus === "loading" ? <div className="empty-state loading-state"><div className="empty-icon">⌁</div><h3>두 검색 엔진에서 자료를 찾고 있습니다</h3><p>OpenAI Web Search와 Gemini Google Search를<br />가능한 경우 동시에 호출합니다.</p><span className="loading-note">최대 120초까지 걸릴 수 있습니다.</span></div> : searchResults ? <div className="provider-results"><ProviderResultCard name="OpenAI" result={searchResults.openai} copied={copiedResult === "openai"} onCopy={() => void copyText(providerCopyText("OpenAI", searchResults.openai), "openai")} /><ProviderResultCard name="Gemini" result={searchResults.gemini} copied={copiedResult === "gemini"} onCopy={() => void copyText(providerCopyText("Gemini", searchResults.gemini), "gemini")} /></div> : <div className="empty-state"><div className="empty-icon">!</div><h3>검색 결과를 표시할 수 없습니다</h3><p>왼쪽 오류 안내를 확인한 뒤 다시 시도해주세요.</p></div>}
         </section>
       </div>
       <footer className="page-footer"><span>이슈브리프</span><span>빠른 판단을 위한 보고서 초안 도구</span></footer>
