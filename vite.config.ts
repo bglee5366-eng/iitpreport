@@ -85,7 +85,7 @@ export default defineConfig(async () => {
       },
     },
     plugins: isVercel
-      ? [vinext(), nitro()]
+        ? [vinext(), nitro({ noExternals: ["kordoc", "cfb", "jszip", "markdown-it", "zod"] })]
       : [
           vinext(),
           sites(),

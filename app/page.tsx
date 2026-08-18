@@ -24,6 +24,26 @@ const sourceOptions = [
 ];
 
 const defaultSources = sourceOptions.map((source) => source.id);
+const periodOptions: Array<{ value: SearchPeriod; label: string }> = [
+  { value: "7d", label: "최근 7일" },
+  { value: "30d", label: "최근 30일" },
+  { value: "1y", label: "최근 1년" },
+  { value: "all", label: "전체 기간" },
+];
+
+function SearchPeriodComboBox({ value, open, onToggle, onSelect }: { value: SearchPeriod; open: boolean; onToggle: () => void; onSelect: (value: SearchPeriod) => void }) {
+  const selected = periodOptions.find((option) => option.value === value) ?? periodOptions[1];
+  return (
+    <div className="search-combobox">
+      <button type="button" id="period-combobox" className="search-combobox-trigger" role="combobox" aria-controls="period-options" aria-expanded={open} aria-haspopup="listbox" onClick={onToggle}>
+        <span>{selected.label}</span><span className={`combobox-chevron ${open ? "open" : ""}`}>⌄</span>
+      </button>
+      {open && <div id="period-options" className="search-combobox-options" role="listbox" aria-label="검색 기간 선택">
+        {periodOptions.map((option) => <button type="button" role="option" aria-selected={option.value === value} className={option.value === value ? "selected" : ""} key={option.value} onClick={() => onSelect(option.value)}>{option.label}{option.value === value && <span>✓</span>}</button>)}
+      </div>}
+    </div>
+  );
+}
 
 function ProviderResultCard({ name, result, copied, onCopy }: { name: string; result: ProviderResult; copied: boolean; onCopy: () => void }) {
   return (
@@ -42,6 +62,7 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [reportType, setReportType] = useState<ReportType>("status-response");
   const [period, setPeriod] = useState<SearchPeriod>("30d");
+  const [periodOpen, setPeriodOpen] = useState(false);
   const [sources, setSources] = useState(defaultSources);
   const [generated, setGenerated] = useState(false);
   const [openAIKey, setOpenAIKey] = useState("");
@@ -152,6 +173,7 @@ export default function Home() {
     setQuery("");
     setReportType("status-response");
     setPeriod("30d");
+    setPeriodOpen(false);
     setSources(defaultSources);
     setGenerated(false);
     setSearchStatus("idle");
@@ -214,8 +236,8 @@ export default function Home() {
           <div className="segmented-control" role="radiogroup" aria-label="보고서 유형"><label className={reportType === "one-page" ? "selected" : ""}><input type="radio" name="reportType" checked={reportType === "one-page"} onChange={() => setReportType("one-page")} /><span>보고용 1장 페이퍼</span></label><label className={reportType === "two-page" ? "selected" : ""}><input type="radio" name="reportType" checked={reportType === "two-page"} onChange={() => setReportType("two-page")} /><span>보고용 2장 페이퍼</span></label><label className={reportType === "status-response" ? "selected" : ""}><input type="radio" name="reportType" checked={reportType === "status-response"} onChange={() => setReportType("status-response")} /><span>현황 · 문제점 · 대응방향 · 향후계획</span></label></div>
           <div className="divider" />
           <div className="card-heading compact"><div><span className="step-label">03</span><h2>검색 조건</h2></div></div>
-          <label className="field-label" htmlFor="period-select">검색 기간</label>
-          <select id="period-select" value={period} onChange={(event) => setPeriod(event.target.value as SearchPeriod)}><option value="7d">최근 7일</option><option value="30d">최근 30일</option><option value="1y">최근 1년</option><option value="all">전체 기간</option></select>
+          <label className="field-label" htmlFor="period-combobox">검색 기간</label>
+          <SearchPeriodComboBox value={period} open={periodOpen} onToggle={() => setPeriodOpen((current) => !current)} onSelect={(value) => { setPeriod(value); setPeriodOpen(false); }} />
           <div className="field-label source-label">검색 소스 <span>복수 선택</span></div>
           <div className="source-list">{sourceOptions.map((source) => <label className="source-option" key={source.id}><input type="checkbox" checked={sources.includes(source.id)} onChange={() => toggleSource(source.id)} /><span className="checkbox-mark" /><span><strong>{source.label}</strong><small>{source.note}</small></span></label>)}</div>
           <div className="template-settings">
