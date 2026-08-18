@@ -50,9 +50,35 @@ function normalizeMarkdown(markdown: string, blocks: IRBlock[]): string {
   return result.replace(/\n{3,}/g, "\n\n").slice(0, 30000);
 }
 
+async function parseHwpxFallback(buffer: Buffer): Promise<ParseResult> {
+  const zip = await JSZip.loadAsync(buffer);
+  const sectionNames = Object.keys(zip.files)
+    .filter((name) => /^Contents\/section\d+\.xml$/i.test(name))
+    .sort((a, b) => Number(a.match(/section(\d+)/i)?.[1] ?? 0) - Number(b.match(/section(\d+)/i)?.[1] ?? 0));
+  if (!sectionNames.length) return { success: false, code: "NO_SECTIONS", error: "HWPX 내부에서 Contents/section*.xml을 찾지 못했습니다." };
+
+  const blocks: IRBlock[] = [];
+  for (const sectionName of sectionNames) {
+    const xml = await zip.files[sectionName].async("string");
+    const document = new DOMParser().parseFromString(xml, "application/xml");
+    const paragraphs = Array.from(document.getElementsByTagName("hp:p"));
+    for (const paragraph of paragraphs) {
+      const text = (paragraph.textContent ?? "").replace(/\s+/g, " ").trim();
+      if (text) blocks.push({ type: "paragraph", text });
+    }
+  }
+  const markdown = blocks.map((block) => block.text ?? "").join("\n\n");
+  return markdown ? { success: true, markdown, blocks, warnings: ["kordoc 의존성 오류로 HWPX XML 구조 fallback 분석을 사용했습니다."] } : { success: false, code: "EMPTY_ANALYSIS", error: "HWPX 섹션에서 텍스트를 찾지 못했습니다." };
+}
+
 async function analyzeDocument(buffer: Buffer, fileName: string): Promise<ParseResult> {
   // kordoc supports HWP3/HWP5, HWPX, DOCX, PDF, XLSX and XLS directly.
   // Keep this route on Node.js: kordoc uses Node-compatible binary parsers.
+  if (extensionOf(fileName) === "hwpx") {
+    // HWPX is a ZIP of XML sections. Use the lightweight XML path first so
+    // template uploads do not wait for kordoc's optional OCR/formula setup.
+    return parseHwpxFallback(buffer);
+  }
   try {
     const kordocModuleName = "kordoc";
     const { parse } = await import(/* @vite-ignore */ kordocModuleName) as KordocModule;
@@ -151,3 +177,5 @@ import { unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import JSZip from "jszip";
+import { DOMParser } from "@xmldom/xmldom";
