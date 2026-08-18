@@ -63,7 +63,11 @@ async function parseHwpxFallback(buffer: Buffer): Promise<ParseResult> {
     const document = new DOMParser().parseFromString(xml, "application/xml");
     const paragraphs = Array.from(document.getElementsByTagName("hp:p"));
     for (const paragraph of paragraphs) {
-      const text = (paragraph.textContent ?? "").replace(/\s+/g, " ").trim();
+      const text = (paragraph.textContent ?? "")
+        .replace(/그림입니다\.\s*[\s\S]*?세로\s*\d+\s*pixel/gi, "")
+        .replace(/원본 그림의 이름:\s*[^\n]+/gi, "")
+        .replace(/원본 그림의 크기:\s*[^\n]+/gi, "")
+        .replace(/\s+/g, " ").trim();
       if (text) blocks.push({ type: "paragraph", text });
     }
   }

@@ -10,10 +10,11 @@ type TemplateStatus = "idle" | "uploading" | "completed" | "error";
 
 type SearchSource = { title: string; url: string };
 type ProviderResult = { status: "success" | "error" | "skipped"; text?: string; sources: SearchSource[]; error?: string; warning?: string; responseMs?: number; model: string };
-type SearchResults = { openai: ProviderResult; gemini: ProviderResult };
+type SearchResults = { openai: ProviderResult; gemini: ProviderResult; claude: ProviderResult };
 
 const OPENAI_SESSION_KEY = "issuebrief.openai-api-key";
 const GEMINI_SESSION_KEY = "issuebrief.gemini-api-key";
+const CLAUDE_SESSION_KEY = "issuebrief.claude-api-key";
 
 const sourceOptions = [
   { id: "public", label: "정부·공공기관", note: "정책·통계·공식 발표" },
@@ -34,7 +35,7 @@ const periodOptions: Array<{ value: SearchPeriod; label: string }> = [
 function ProviderResultCard({ name, result, copied, onCopy }: { name: string; result: ProviderResult; copied: boolean; onCopy: () => void }) {
   return (
     <article className={`provider-result ${result.status}`}>
-      <div className="provider-result-heading"><div><span className="step-label">{name === "OpenAI" ? "OPENAI WEB SEARCH" : "GEMINI GOOGLE SEARCH"}</span><h3>{name}</h3></div><div className="provider-result-actions">{result.status === "success" && <button type="button" className="copy-button" onClick={onCopy}>{copied ? "복사 완료" : "결과 복사"}</button>}<span className="provider-status">{result.status === "success" ? `성공 · ${result.responseMs ?? 0}ms` : result.status === "skipped" ? "키 미입력" : "호출 실패"}</span></div></div>
+      <div className="provider-result-heading"><div><span className="step-label">{name === "OpenAI" ? "OPENAI WEB SEARCH" : name === "Gemini" ? "GEMINI GOOGLE SEARCH" : "CLAUDE ANALYSIS"}</span><h3>{name}</h3></div><div className="provider-result-actions">{result.status === "success" && <button type="button" className="copy-button" onClick={onCopy}>{copied ? "복사 완료" : "결과 복사"}</button>}<span className="provider-status">{result.status === "success" ? `성공 · ${result.responseMs ?? 0}ms` : result.status === "skipped" ? "키 미입력" : "호출 실패"}</span></div></div>
       {result.status === "success" ? <>
         {result.warning && <div className="provider-warning">{result.warning}</div>}
         <div className="provider-report-text">{result.text}</div>
@@ -52,6 +53,7 @@ export default function Home() {
   const [generated, setGenerated] = useState(false);
   const [openAIKey, setOpenAIKey] = useState("");
   const [geminiKey, setGeminiKey] = useState("");
+  const [claudeKey, setClaudeKey] = useState("");
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>("idle");
   const [apiError, setApiError] = useState("");
   const [searchStatus, setSearchStatus] = useState<SearchStatus>("idle");
@@ -65,9 +67,11 @@ export default function Home() {
   useEffect(() => {
     const storedOpenAIKey = sessionStorage.getItem(OPENAI_SESSION_KEY) ?? "";
     const storedGeminiKey = sessionStorage.getItem(GEMINI_SESSION_KEY) ?? "";
+    const storedClaudeKey = sessionStorage.getItem(CLAUDE_SESSION_KEY) ?? "";
     setOpenAIKey(storedOpenAIKey);
     setGeminiKey(storedGeminiKey);
-    if (storedOpenAIKey || storedGeminiKey) setSessionStatus("saved");
+    setClaudeKey(storedClaudeKey);
+    if (storedOpenAIKey || storedGeminiKey || storedClaudeKey) setSessionStatus("saved");
   }, []);
 
   function toggleSource(sourceId: string) {
@@ -80,8 +84,8 @@ export default function Home() {
       setApiError("먼저 분석할 키워드나 뉴스 기사 본문을 입력해주세요.");
       return;
     }
-    if (!openAIKey.trim() && !geminiKey.trim()) {
-      setApiError("OpenAI 또는 Gemini API 키를 하나 이상 입력해주세요.");
+    if (!openAIKey.trim() && !geminiKey.trim() && !claudeKey.trim()) {
+      setApiError("OpenAI, Gemini 또는 Claude API 키를 하나 이상 입력해주세요.");
       setGenerated(false);
       return;
     }
@@ -99,6 +103,7 @@ export default function Home() {
         sources,
         openAIKey: openAIKey.trim() || undefined,
         geminiKey: geminiKey.trim() || undefined,
+        claudeKey: claudeKey.trim() || undefined,
         maxSources: 20,
         templateFileName: templateFileName || undefined,
         templateMarkdown: templateMarkdown || undefined,
@@ -141,6 +146,7 @@ export default function Home() {
   function handleSaveSession() {
     sessionStorage.setItem(OPENAI_SESSION_KEY, openAIKey);
     sessionStorage.setItem(GEMINI_SESSION_KEY, geminiKey);
+    sessionStorage.setItem(CLAUDE_SESSION_KEY, claudeKey);
     setSessionStatus("saved");
     setApiError("");
   }
@@ -148,8 +154,10 @@ export default function Home() {
   function handleClearSession() {
     sessionStorage.removeItem(OPENAI_SESSION_KEY);
     sessionStorage.removeItem(GEMINI_SESSION_KEY);
+    sessionStorage.removeItem(CLAUDE_SESSION_KEY);
     setOpenAIKey("");
     setGeminiKey("");
+    setClaudeKey("");
     setSessionStatus("idle");
     setApiError("");
   }
@@ -199,7 +207,7 @@ export default function Home() {
 
   function allResultsCopyText() {
     if (!searchResults) return "";
-    return [providerCopyText("OpenAI", searchResults.openai), providerCopyText("Gemini", searchResults.gemini)].join("\n\n====================\n\n");
+    return [providerCopyText("OpenAI", searchResults.openai), providerCopyText("Gemini", searchResults.gemini), providerCopyText("Claude", searchResults.claude)].join("\n\n====================\n\n");
   }
 
   return (
@@ -238,6 +246,8 @@ export default function Home() {
             <input className="api-key-input" id="openai-key" type="password" value={openAIKey} onChange={(event) => { setOpenAIKey(event.target.value); setSessionStatus("changed"); setApiError(""); }} placeholder="sk-..." autoComplete="off" />
             <label className="field-label" htmlFor="gemini-key">Gemini API 키</label>
             <input className="api-key-input" id="gemini-key" type="password" value={geminiKey} onChange={(event) => { setGeminiKey(event.target.value); setSessionStatus("changed"); setApiError(""); }} placeholder="AIza..." autoComplete="off" />
+            <label className="field-label" htmlFor="claude-key">Claude API 키</label>
+            <input className="api-key-input" id="claude-key" type="password" value={claudeKey} onChange={(event) => { setClaudeKey(event.target.value); setSessionStatus("changed"); setApiError(""); }} placeholder="sk-ant-..." autoComplete="off" />
             <div className="session-notice"><span className="lock-mark">▣</span><span>탭을 닫으면 저장된 키가 삭제됩니다.</span></div>
             <div className="session-actions"><button type="button" className="secondary-button" onClick={handleSaveSession}>세션 저장</button><button type="button" className="text-button" onClick={handleClearSession}>세션 비우기</button><span className={sessionStatus === "saved" ? "session-status saved" : "session-status"}>{sessionStatus === "saved" ? "저장됨" : sessionStatus === "changed" ? "변경사항 저장 필요" : "저장되지 않음"}</span></div>
           </div>
@@ -248,7 +258,7 @@ export default function Home() {
         </form>
         <section className="result-card" aria-live="polite">
           <div className="result-header"><div><span className="step-label">RESULT</span><h2>생성 결과</h2></div>{searchResults ? <div className="result-header-actions"><button type="button" className="copy-all-button" onClick={() => void copyText(allResultsCopyText(), "all")}>{copiedResult === "all" ? "전체 복사 완료" : "전체 결과 복사"}</button><span className="preview-badge">PREVIEW</span></div> : <span className="preview-badge">PREVIEW</span>}</div>
-          {!generated ? <div className="empty-state"><div className="empty-icon">✦</div><h3>보고서 초안이 이곳에 나타납니다</h3><p>왼쪽에서 이슈와 조건을 설정한 뒤<br />생성 버튼을 눌러보세요.</p><div className="empty-line" /><span>OpenAI·Gemini 검색 결과가 각각 표시됩니다</span></div> : searchStatus === "loading" ? <div className="empty-state loading-state"><div className="empty-icon">⌁</div><h3>두 검색 엔진에서 자료를 찾고 있습니다</h3><p>OpenAI Web Search와 Gemini Google Search를<br />가능한 경우 동시에 호출합니다.</p><span className="loading-note">최대 120초까지 걸릴 수 있습니다.</span></div> : searchResults ? <div className="provider-results"><ProviderResultCard name="OpenAI" result={searchResults.openai} copied={copiedResult === "openai"} onCopy={() => void copyText(providerCopyText("OpenAI", searchResults.openai), "openai")} /><ProviderResultCard name="Gemini" result={searchResults.gemini} copied={copiedResult === "gemini"} onCopy={() => void copyText(providerCopyText("Gemini", searchResults.gemini), "gemini")} /></div> : <div className="empty-state"><div className="empty-icon">!</div><h3>검색 결과를 표시할 수 없습니다</h3><p>왼쪽 오류 안내를 확인한 뒤 다시 시도해주세요.</p></div>}
+          {!generated ? <div className="empty-state"><div className="empty-icon">✦</div><h3>보고서 초안이 이곳에 나타납니다</h3><p>왼쪽에서 이슈와 조건을 설정한 뒤<br />생성 버튼을 눌러보세요.</p><div className="empty-line" /><span>OpenAI·Gemini·Claude 결과가 각각 표시됩니다</span></div> : searchStatus === "loading" ? <div className="empty-state loading-state"><div className="empty-icon">⌁</div><h3>검색 엔진과 Claude에서 자료를 찾고 있습니다</h3><p>입력한 API 키가 있는 제공자를<br />가능한 경우 동시에 호출합니다.</p><span className="loading-note">최대 120초까지 걸릴 수 있습니다.</span></div> : searchResults ? <div className="provider-results"><ProviderResultCard name="OpenAI" result={searchResults.openai} copied={copiedResult === "openai"} onCopy={() => void copyText(providerCopyText("OpenAI", searchResults.openai), "openai")} /><ProviderResultCard name="Gemini" result={searchResults.gemini} copied={copiedResult === "gemini"} onCopy={() => void copyText(providerCopyText("Gemini", searchResults.gemini), "gemini")} /><ProviderResultCard name="Claude" result={searchResults.claude} copied={copiedResult === "claude"} onCopy={() => void copyText(providerCopyText("Claude", searchResults.claude), "claude")} /></div> : <div className="empty-state"><div className="empty-icon">!</div><h3>검색 결과를 표시할 수 없습니다</h3><p>왼쪽 오류 안내를 확인한 뒤 다시 시도해주세요.</p></div>}
         </section>
       </div>
       <footer className="page-footer"><span>이슈브리프</span><span>빠른 판단을 위한 보고서 초안 도구</span></footer>
