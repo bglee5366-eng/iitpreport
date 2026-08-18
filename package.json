@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "node node_modules/vinext/dist/cli.js dev",
     "build": "node node_modules/vinext/dist/cli.js build",
+    "build:vercel": "vite build",
     "start": "node node_modules/vinext/dist/cli.js start",
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
@@ -19,6 +20,7 @@
     "drizzle-orm": "0.45.2",
     "jszip": "3.10.1",
     "kordoc": "4.9.0",
+    "nitro": "3.0.260610-beta",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "react-loading-skeleton": "3.5.0",
