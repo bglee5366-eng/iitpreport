@@ -6,7 +6,7 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "node node_modules/vinext/dist/cli.js dev",
+    "dev": "node scripts/dev-local.mjs",
     "build": "node node_modules/vinext/dist/cli.js build",
     "build:vercel": "vite build",
     "start": "node node_modules/vinext/dist/cli.js start",

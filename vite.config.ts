@@ -53,8 +53,6 @@ export default defineConfig(async () => {
     // through createRequire in the Node.js Route Handler.
     ssr: {
       external: [
-        "kordoc",
-        "cfb",
         "puppeteer-core",
         "sharp",
         "pdfjs-dist",
@@ -62,6 +60,7 @@ export default defineConfig(async () => {
         "onnxruntime-node",
         "@huggingface/transformers",
       ],
+      noExternal: ["kordoc", "cfb", "jszip", "markdown-it", "zod"],
     },
     optimizeDeps: {
       exclude: ["kordoc"],
@@ -69,8 +68,6 @@ export default defineConfig(async () => {
     build: {
       rolldownOptions: {
         external: [
-          "kordoc",
-          "cfb",
           "puppeteer-core",
           "sharp",
           "pdfjs-dist",
@@ -80,9 +77,13 @@ export default defineConfig(async () => {
         ],
       },
     },
-    server: isCodexSeatbeltSandbox
-      ? { watch: { useFsEvents: false, usePolling: true } }
-      : undefined,
+    server: {
+      ...(isCodexSeatbeltSandbox ? { watch: { useFsEvents: false, usePolling: true } } : {}),
+      proxy: {
+        "/api/template": "http://127.0.0.1:3001",
+        "/api/search": "http://127.0.0.1:3002",
+      },
+    },
     plugins: isVercel
       ? [vinext(), nitro()]
       : [

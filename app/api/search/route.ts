@@ -1,13 +1,13 @@
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
-const OPENAI_MODEL = "gpt-5.6-luna";
-const GEMINI_MODEL = "gemini-3.5-flash-lite";
+const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-5";
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-3.5-flash";
 const REQUEST_TIMEOUT_MS = 120_000;
 const MAX_SOURCES = 20;
 
 type SearchSource = { title: string; url: string };
-type ProviderResult = { status: "success" | "error" | "skipped"; text?: string; sources: SearchSource[]; error?: string; responseMs?: number; model: string };
+type ProviderResult = { status: "success" | "error" | "skipped"; text?: string; sources: SearchSource[]; error?: string; warning?: string; responseMs?: number; model: string };
 type SearchInput = { query?: string; reportType?: string; period?: string; sources?: string[]; openAIKey?: string; geminiKey?: string; maxSources?: number; templateFileName?: string; templateMarkdown?: string };
 
 const sourceLabels: Record<string, string> = {
@@ -117,7 +117,18 @@ function buildPrompt(input: SearchInput): string {
   const selectedSources = (input.sources ?? []).map((source) => sourceLabels[source] ?? source).join(", ") || "제한 없음";
   const period = input.period ?? "30d";
   const periodText: Record<string, string> = { "7d": "최근 7일", "30d": "최근 30일", "1y": "최근 1년", all: "전체 기간" };
-  const templateSection = input.templateMarkdown?.trim() ? `\n\n업로드된 문서 양식 분석 결과 (${input.templateFileName ?? "업로드 양식"}):\n---\n${input.templateMarkdown.slice(0, 30000)}\n---\n위 양식의 제목·항목명·문단 순서·표 구조를 최대한 유지하고, 생성 결과가 이 구조를 따르도록 작성하세요.` : "";
+  const templateSection = input.templateMarkdown?.trim() ? `\n\n[업로드 양식 우선 규칙]\n파일명: ${input.templateFileName ?? "업로드 양식"}\n아래는 kordoc이 원본 문서에서 추출한 순서 보존형 구조입니다.\n---\n${input.templateMarkdown.slice(0, 30000)}\n---\n반드시 다음 규칙을 지키세요.\n1. 위 양식의 제목, 섹션명, 항목명, 문단 순서를 그대로 유지하세요.\n2. 표는 열 순서와 행 구조를 유지하고, 빈칸은 조사 결과에 맞는 내용으로 채우세요.\n3. 원본에 없는 새 대제목을 임의로 추가하지 마세요. 원본 항목에 대응하는 내용만 작성하세요.\n4. 원본 양식의 구조가 기본 보고서 형식과 다르면 기본 형식보다 업로드 양식을 우선하세요.\n5. 양식의 자리표시자나 안내 문구는 실제 보고서 내용으로 대체하되, 확인되지 않은 내용은 '확인 필요'로 표시하세요.` : "";
+  const formatInstruction = input.templateMarkdown?.trim()
+    ? "업로드 양식 우선 규칙에 따라 원본 구조를 유지하여 작성하세요."
+    : `다음 형식으로 작성하세요:
+제목
+핵심 요약
+현황
+문제점
+대응방향
+효과성
+시사점
+참고 출처`;
   return `당신은 한국어 이슈 대응·성과 보고서 작성자입니다. 아래 이슈를 웹 검색으로 조사해 사실과 출처를 확인하세요.
 
 이슈 입력:
@@ -127,15 +138,7 @@ ${input.query?.slice(0, 5000) ?? ""}
 검색 기간: ${periodText[period] ?? period} (이 기간의 자료를 우선 검색하고, 오래된 자료는 배경 설명에만 사용)
 검색 소스 유형: ${selectedSources}
 
-다음 형식으로 작성하세요:
-제목
-핵심 요약
-현황
-문제점
-대응방향
-효과성
-시사점
-참고 출처
+${formatInstruction}
 
 각 섹션은 간결하되 보고에 사용할 수 있도록 구체적으로 작성하세요. 검색 결과로 확인되지 않은 사실은 단정하지 말고 '확인 필요'로 표시하세요. 본문 안에는 URL을 직접 쓰지 말고 근거가 있는 문장 뒤에 [출처 확인]이라고 쓰지 말며, 검색 도구가 제공하는 출처 연결을 바탕으로 답변하세요. 참고 출처에는 확인된 자료의 제목과 핵심 내용을 포함하세요. 최대 20개 자료를 활용하세요.${templateSection}`;
 }
@@ -152,6 +155,22 @@ function geminiTimeRangeFilter(period: string | undefined): { startTime: string;
   return { startTime: withoutFractionalSeconds(start), endTime: withoutFractionalSeconds(end) };
 }
 
+class ProviderHttpError extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) { super(message); this.status = status; }
+}
+
+function providerErrorMessage(provider: string, error: unknown): string {
+  if (!(error instanceof ProviderHttpError)) {
+    if (error instanceof TypeError && error.message.toLowerCase().includes("fetch failed")) return `${provider} 서버에 연결하지 못했습니다. 인터넷 연결, 방화벽 또는 프록시 설정을 확인하세요.`;
+    return error instanceof Error ? error.message : `${provider} 요청 중 알 수 없는 오류가 발생했습니다.`;
+  }
+  if (error.status === 401 || error.status === 403) return `${provider} API 키가 유효하지 않거나 해당 API 권한이 없습니다. 키와 프로젝트 설정을 확인하세요.`;
+  if (error.status === 404) return `${provider} 모델 또는 API 경로를 사용할 수 없습니다. 현재 모델 설정을 확인하세요.`;
+  if (error.status === 429) return `${provider} API 사용량 한도 또는 결제 한도에 도달했습니다.`;
+  return error.message;
+}
+
 async function fetchJson(url: string, init: RequestInit): Promise<any> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -162,7 +181,8 @@ async function fetchJson(url: string, init: RequestInit): Promise<any> {
     try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
     if (!response.ok) {
       const providerMessage = data?.error?.message || data?.error?.status || data?.message;
-      throw new Error(providerMessage ? `HTTP ${response.status}: ${providerMessage}` : `HTTP ${response.status} 응답`);
+      const rawMessage = raw.trim().replace(/\s+/g, " ").slice(0, 500);
+      throw new ProviderHttpError(response.status, providerMessage ? `HTTP ${response.status}: ${providerMessage}` : rawMessage ? `HTTP ${response.status}: ${rawMessage}` : `HTTP ${response.status} 응답`);
     }
     return data;
   } finally {
@@ -186,7 +206,15 @@ async function runOpenAI(input: SearchInput, key: string, maxSources: number): P
     });
     return { status: "success", text: addCitationMarkers(textFromOpenAI(response), sources, references), sources, responseMs: Date.now() - started, model: OPENAI_MODEL };
   } catch (error: unknown) {
-    return { status: "error", sources: [], error: error instanceof Error && error.name === "AbortError" ? "요청 시간이 120초를 초과했습니다." : error instanceof Error ? error.message : "OpenAI 요청 중 알 수 없는 오류가 발생했습니다.", responseMs: Date.now() - started, model: OPENAI_MODEL };
+    if (error instanceof ProviderHttpError && (error.status === 400 || error.status === 404 || error.status >= 500)) {
+      try {
+        const fallback = await fetchJson("https://api.openai.com/v1/responses", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: OPENAI_MODEL, input: buildPrompt(input) }) });
+        return { status: "success", text: textFromOpenAI(fallback), sources: [], warning: "OpenAI Web Search를 사용할 수 없어 일반 생성으로 처리했습니다. 검색 출처가 필요하면 API 프로젝트의 Web Search 권한과 결제 설정을 확인하세요.", responseMs: Date.now() - started, model: OPENAI_MODEL };
+      } catch (fallbackError: unknown) {
+        error = fallbackError;
+      }
+    }
+    return { status: "error", sources: [], error: error instanceof Error && error.name === "AbortError" ? "요청 시간이 120초를 초과했습니다." : providerErrorMessage("OpenAI", error), responseMs: Date.now() - started, model: OPENAI_MODEL };
   }
 }
 
@@ -207,7 +235,16 @@ async function runGemini(input: SearchInput, key: string, maxSources: number): P
     const text = response?.candidates?.[0]?.content?.parts?.map((part: any) => part.text).filter(Boolean).join("\n\n") ?? "";
     return { status: "success", text: addCitationMarkers(text, sources, references), sources, responseMs: Date.now() - started, model: GEMINI_MODEL };
   } catch (error: unknown) {
-    return { status: "error", sources: [], error: error instanceof Error && error.name === "AbortError" ? "요청 시간이 120초를 초과했습니다." : error instanceof Error ? error.message : "Gemini 요청 중 알 수 없는 오류가 발생했습니다.", responseMs: Date.now() - started, model: GEMINI_MODEL };
+    if (error instanceof ProviderHttpError && (error.status === 400 || error.status === 404 || error.status >= 500)) {
+      try {
+        const fallback = await fetchJson(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify({ contents: [{ parts: [{ text: buildPrompt(input) }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 4000 } }) });
+        const text = fallback?.candidates?.[0]?.content?.parts?.map((part: any) => part.text).filter(Boolean).join("\n\n") ?? "";
+        return { status: "success", text, sources: [], warning: "Gemini Google Search를 사용할 수 없어 일반 생성으로 처리했습니다. 검색 출처가 필요하면 Gemini API 프로젝트의 Search Grounding 권한과 결제 설정을 확인하세요.", responseMs: Date.now() - started, model: GEMINI_MODEL };
+      } catch (fallbackError: unknown) {
+        error = fallbackError;
+      }
+    }
+    return { status: "error", sources: [], error: error instanceof Error && error.name === "AbortError" ? "요청 시간이 120초를 초과했습니다." : providerErrorMessage("Gemini", error), responseMs: Date.now() - started, model: GEMINI_MODEL };
   }
 }
 

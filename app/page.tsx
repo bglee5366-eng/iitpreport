@@ -9,7 +9,7 @@ type SearchStatus = "idle" | "loading" | "done";
 type TemplateStatus = "idle" | "uploading" | "completed" | "error";
 
 type SearchSource = { title: string; url: string };
-type ProviderResult = { status: "success" | "error" | "skipped"; text?: string; sources: SearchSource[]; error?: string; responseMs?: number; model: string };
+type ProviderResult = { status: "success" | "error" | "skipped"; text?: string; sources: SearchSource[]; error?: string; warning?: string; responseMs?: number; model: string };
 type SearchResults = { openai: ProviderResult; gemini: ProviderResult };
 
 const OPENAI_SESSION_KEY = "issuebrief.openai-api-key";
@@ -30,6 +30,7 @@ function ProviderResultCard({ name, result }: { name: string; result: ProviderRe
     <article className={`provider-result ${result.status}`}>
       <div className="provider-result-heading"><div><span className="step-label">{name === "OpenAI" ? "OPENAI WEB SEARCH" : "GEMINI GOOGLE SEARCH"}</span><h3>{name}</h3></div><span className="provider-status">{result.status === "success" ? `성공 · ${result.responseMs ?? 0}ms` : result.status === "skipped" ? "키 미입력" : "호출 실패"}</span></div>
       {result.status === "success" ? <>
+        {result.warning && <div className="provider-warning">{result.warning}</div>}
         <div className="provider-report-text">{result.text}</div>
         <div className="provider-sources"><h4>참고 출처 <span>{result.sources.length}개</span></h4>{result.sources.length ? result.sources.map((source, index) => <a href={source.url} target="_blank" rel="noreferrer" key={source.url}>[{index + 1}] {source.title}</a>) : <p>응답에서 확인된 출처가 없습니다.</p>}</div>
       </> : <div className="provider-error"><strong>{result.status === "skipped" ? "이 API는 건너뛰었습니다." : "이 API 호출에 실패했습니다."}</strong><p>{result.error ?? "원인을 확인할 수 없습니다."}</p></div>}
