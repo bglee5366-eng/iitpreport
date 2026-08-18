@@ -99,12 +99,12 @@ function collectGeminiData(response: any): { sources: SearchSource[]; supports: 
 }
 
 function cleanGeneratedText(text: string): string {
-  return text
+  return text.split(/\n{2,}/).map((paragraph) => paragraph
     .replace(/그림입니다\.\s*[\s\S]*?세로\s*\d+\s*pixel/gi, "")
     .replace(/원본 그림의 이름:\s*[^\n]+/gi, "")
     .replace(/원본 그림의 크기:\s*[^\n]+/gi, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+    .replace(/[ \t]{2,}/g, " ")
+    .trim()).filter(Boolean).join("\n\n").trim();
 }
 
 function collectTextLinks(text: string): SearchSource[] {
@@ -151,6 +151,12 @@ function buildPrompt(input: SearchInput): string {
 효과성
 시사점
 참고 출처`;
+  const qualityInstruction = `분량과 품질 기준:
+- 단순 요약이나 10줄 이내 답변으로 끝내지 말고, 최소 8개 이상의 구분된 섹션 또는 항목을 작성하세요.
+- 각 섹션은 최소 2개 이상의 구체적인 문단 또는 항목으로 구성하고, 전체 분량은 한국어 기준 최소 2,500자 이상을 목표로 하세요.
+- 현황, 핵심 쟁점, 원인·영향, 근거 자료, 대응방향, 실행계획, 기대효과, 향후계획을 빠짐없이 다루세요. 업로드 양식이 있으면 양식의 항목명으로 대응하세요.
+- 사실·수치·날짜·기관명은 검색 근거가 있을 때만 쓰고, 근거가 부족하면 '확인 필요'로 표시하세요.
+- 보고서 본문에는 검색 결과에서 확인한 출처를 [출처 1], [출처 2]처럼 표시하세요.`;
   return `당신은 한국어 이슈 대응·성과 보고서 작성자입니다. 아래 이슈를 웹 검색으로 조사해 사실과 출처를 확인하세요.
 
 이슈 입력:
@@ -162,7 +168,9 @@ ${input.query?.slice(0, 5000) ?? ""}
 
 ${formatInstruction}
 
-각 섹션은 간결하되 보고에 사용할 수 있도록 구체적으로 작성하세요. 검색 결과로 확인되지 않은 사실은 단정하지 말고 '확인 필요'로 표시하세요. 본문 안에는 URL을 직접 쓰지 말고 근거가 있는 문장 뒤에 [출처 확인]이라고 쓰지 말며, 검색 도구가 제공하는 출처 연결을 바탕으로 답변하세요. 참고 출처에는 확인된 자료의 제목과 핵심 내용을 포함하세요. 최대 20개 자료를 활용하세요.${templateSection}`;
+${qualityInstruction}
+
+본문 안에는 URL을 직접 쓰지 말고 검색 도구가 제공하는 출처 연결을 바탕으로 답변하세요. 참고 출처에는 확인된 자료의 제목과 핵심 내용을 포함하세요. 최대 20개 자료를 활용하세요.${templateSection}`;
 }
 
 function geminiTimeRangeFilter(period: string | undefined): { startTime: string; endTime: string } | undefined {
@@ -245,7 +253,7 @@ async function runGemini(input: SearchInput, key: string, maxSources: number): P
   try {
     const timeRangeFilter = geminiTimeRangeFilter(input.period);
     const googleSearchTool = timeRangeFilter ? { google_search: { timeRangeFilter } } : { google_search: {} };
-    const response = await fetchJson(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify({ contents: [{ parts: [{ text: buildPrompt(input) }] }], tools: [googleSearchTool], generationConfig: { thinkingConfig: { thinkingLevel: "high" }, maxOutputTokens: 4000 } }) });
+    const response = await fetchJson(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify({ contents: [{ parts: [{ text: buildPrompt(input) }] }], tools: [googleSearchTool], generationConfig: { thinkingConfig: { thinkingLevel: "medium" }, maxOutputTokens: 8000 } }) });
     const data = collectGeminiData(response);
     const sources = dedupeSources(data.sources, maxSources);
     const sourceIndex = new Map(sources.map((source, index) => [normalizeUrl(source.url), index]));
@@ -267,7 +275,7 @@ async function runGemini(input: SearchInput, key: string, maxSources: number): P
   } catch (error: unknown) {
     if (error instanceof ProviderHttpError && (error.status === 400 || error.status === 404 || error.status >= 500)) {
       try {
-        const fallback = await fetchJson(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify({ contents: [{ parts: [{ text: buildPrompt(input) }] }], generationConfig: { thinkingConfig: { thinkingLevel: "high" }, maxOutputTokens: 4000 } }) });
+        const fallback = await fetchJson(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify({ contents: [{ parts: [{ text: buildPrompt(input) }] }], generationConfig: { thinkingConfig: { thinkingLevel: "medium" }, maxOutputTokens: 8000 } }) });
         const text = fallback?.candidates?.[0]?.content?.parts?.map((part: any) => part.text).filter(Boolean).join("\n\n") ?? "";
         return { status: "success", text, sources: [], warning: "Gemini Google Search를 사용할 수 없어 일반 생성으로 처리했습니다. 검색 출처가 필요하면 Gemini API 프로젝트의 Search Grounding 권한과 결제 설정을 확인하세요.", responseMs: Date.now() - started, model: GEMINI_MODEL };
       } catch (fallbackError: unknown) {
