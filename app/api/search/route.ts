@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 export const maxDuration = 120;
 
 const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-5";
-const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-3.5-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-3.6-flash";
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL ?? "claude-sonnet-4-20250514";
 const REQUEST_TIMEOUT_MS = 120_000;
 const MAX_SOURCES = 20;
@@ -245,7 +245,7 @@ async function runGemini(input: SearchInput, key: string, maxSources: number): P
   try {
     const timeRangeFilter = geminiTimeRangeFilter(input.period);
     const googleSearchTool = timeRangeFilter ? { google_search: { timeRangeFilter } } : { google_search: {} };
-    const response = await fetchJson(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify({ contents: [{ parts: [{ text: buildPrompt(input) }] }], tools: [googleSearchTool], generationConfig: { temperature: 0.2, maxOutputTokens: 4000 } }) });
+    const response = await fetchJson(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify({ contents: [{ parts: [{ text: buildPrompt(input) }] }], tools: [googleSearchTool], generationConfig: { thinkingConfig: { thinkingLevel: "high" }, maxOutputTokens: 4000 } }) });
     const data = collectGeminiData(response);
     const sources = dedupeSources(data.sources, maxSources);
     const sourceIndex = new Map(sources.map((source, index) => [normalizeUrl(source.url), index]));
@@ -267,7 +267,7 @@ async function runGemini(input: SearchInput, key: string, maxSources: number): P
   } catch (error: unknown) {
     if (error instanceof ProviderHttpError && (error.status === 400 || error.status === 404 || error.status >= 500)) {
       try {
-        const fallback = await fetchJson(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify({ contents: [{ parts: [{ text: buildPrompt(input) }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 4000 } }) });
+        const fallback = await fetchJson(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify({ contents: [{ parts: [{ text: buildPrompt(input) }] }], generationConfig: { thinkingConfig: { thinkingLevel: "high" }, maxOutputTokens: 4000 } }) });
         const text = fallback?.candidates?.[0]?.content?.parts?.map((part: any) => part.text).filter(Boolean).join("\n\n") ?? "";
         return { status: "success", text, sources: [], warning: "Gemini Google Search를 사용할 수 없어 일반 생성으로 처리했습니다. 검색 출처가 필요하면 Gemini API 프로젝트의 Search Grounding 권한과 결제 설정을 확인하세요.", responseMs: Date.now() - started, model: GEMINI_MODEL };
       } catch (fallbackError: unknown) {
