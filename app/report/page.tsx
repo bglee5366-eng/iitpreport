@@ -23,7 +23,12 @@ export default function SavedReportPage() {
 
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("id");
-    setReport(id ? getStoredReport(id) ?? null : null);
+    if (!id) return;
+    const localReport = getStoredReport(id);
+    void fetch(`/api/reports?id=${encodeURIComponent(id)}`)
+      .then(async (response) => response.ok ? (await response.json() as { report?: StoredReport }).report : undefined)
+      .then((remoteReport) => setReport(remoteReport ?? localReport ?? null))
+      .catch(() => setReport(localReport ?? null));
   }, []);
 
   if (!report) return <main className="saved-report-page"><div className="saved-report-empty"><h1>저장된 보고서를 찾을 수 없습니다.</h1><p>원래 탭에서 보고서를 먼저 저장한 뒤 다시 열어주세요.</p><a href="/">이슈브리프로 돌아가기</a></div></main>;

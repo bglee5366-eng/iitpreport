@@ -66,6 +66,7 @@ export default function Home() {
   const [templateError, setTemplateError] = useState("");
   const [copiedResult, setCopiedResult] = useState("");
   const [savedReportId, setSavedReportId] = useState("");
+  const [savingReport, setSavingReport] = useState(false);
 
   useEffect(() => {
     const storedOpenAIKey = sessionStorage.getItem(OPENAI_SESSION_KEY) ?? "";
@@ -182,7 +183,7 @@ export default function Home() {
     setSavedReportId("");
   }
 
-  function handleSaveReport() {
+  async function handleSaveReport() {
     if (!searchResults) return;
     const id = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `report-${Date.now()}`;
     const report: StoredReport = {
@@ -196,9 +197,25 @@ export default function Home() {
       createdAt: new Date().toISOString(),
       results: searchResults,
     };
-    saveStoredReport(report);
-    setSavedReportId(id);
-    setApiError("");
+    setSavingReport(true);
+    try {
+      const response = await fetch("/api/reports", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(report) });
+      if (response.ok) {
+        const payload = await response.json() as { report?: StoredReport };
+        setSavedReportId(payload.report?.id ?? id);
+        setApiError("");
+      } else {
+        saveStoredReport(report);
+        setSavedReportId(id);
+        setApiError("Supabase가 아직 설정되지 않아 이 보고서를 현재 브라우저에 임시 저장했습니다.");
+      }
+    } catch {
+      saveStoredReport(report);
+      setSavedReportId(id);
+      setApiError("Supabase에 연결하지 못해 이 보고서를 현재 브라우저에 임시 저장했습니다.");
+    } finally {
+      setSavingReport(false);
+    }
   }
 
   function handleOpenSavedReport() {
@@ -286,7 +303,7 @@ export default function Home() {
           <p className="helper-text">현재는 예시 결과가 표시됩니다. API 연결 후 실시간 검색이 지원됩니다.</p>
         </form>
         <section className="result-card" aria-live="polite">
-          <div className="result-header"><div><span className="step-label">RESULT</span><h2>생성 결과</h2></div>{searchResults ? <div className="result-header-actions"><button type="button" className="save-report-button" onClick={handleSaveReport}>{savedReportId ? "저장 완료" : "보고서 저장"}</button>{savedReportId && <button type="button" className="open-report-button" onClick={handleOpenSavedReport}>새 탭에서 확인</button>}<button type="button" className="copy-all-button" onClick={() => void copyText(allResultsCopyText(), "all")}>{copiedResult === "all" ? "전체 복사 완료" : "전체 결과 복사"}</button><span className="preview-badge">PREVIEW</span></div> : <span className="preview-badge">PREVIEW</span>}</div>
+          <div className="result-header"><div><span className="step-label">RESULT</span><h2>생성 결과</h2></div>{searchResults ? <div className="result-header-actions"><button type="button" className="save-report-button" onClick={() => void handleSaveReport()} disabled={savingReport}>{savingReport ? "저장 중..." : savedReportId ? "저장 완료" : "보고서 저장"}</button>{savedReportId && <button type="button" className="open-report-button" onClick={handleOpenSavedReport}>새 탭에서 확인</button>}<button type="button" className="copy-all-button" onClick={() => void copyText(allResultsCopyText(), "all")}>{copiedResult === "all" ? "전체 복사 완료" : "전체 결과 복사"}</button><span className="preview-badge">PREVIEW</span></div> : <span className="preview-badge">PREVIEW</span>}</div>
           {!generated ? <div className="empty-state"><div className="empty-icon">✦</div><h3>보고서 초안이 이곳에 나타납니다</h3><p>왼쪽에서 이슈와 조건을 설정한 뒤<br />생성 버튼을 눌러보세요.</p><div className="empty-line" /><span>OpenAI·Gemini·Claude 결과가 각각 표시됩니다</span></div> : searchStatus === "loading" ? <div className="empty-state loading-state"><div className="empty-icon">⌁</div><h3>검색 엔진과 Claude에서 자료를 찾고 있습니다</h3><p>입력한 API 키가 있는 제공자를<br />가능한 경우 동시에 호출합니다.</p><span className="loading-note">최대 120초까지 걸릴 수 있습니다.</span></div> : searchResults ? <div className="provider-results"><ProviderResultCard name="OpenAI" result={searchResults.openai} copied={copiedResult === "openai"} onCopy={() => void copyText(providerCopyText("OpenAI", searchResults.openai), "openai")} /><ProviderResultCard name="Gemini" result={searchResults.gemini} copied={copiedResult === "gemini"} onCopy={() => void copyText(providerCopyText("Gemini", searchResults.gemini), "gemini")} /><ProviderResultCard name="Claude" result={searchResults.claude} copied={copiedResult === "claude"} onCopy={() => void copyText(providerCopyText("Claude", searchResults.claude), "claude")} /></div> : <div className="empty-state"><div className="empty-icon">!</div><h3>검색 결과를 표시할 수 없습니다</h3><p>왼쪽 오류 안내를 확인한 뒤 다시 시도해주세요.</p></div>}
         </section>
       </div>

@@ -27,6 +27,15 @@ npm run build
 
 검색 요청은 `/api/search`, 문서 양식 분석은 `/api/template` Route Handler에서 처리하며 Node.js 런타임을 사용합니다.
 
+## Supabase 보고서 저장
+
+1. Supabase 프로젝트를 만든 뒤 SQL Editor에서 `supabase/migrations/202608190001_create_reports.sql`을 실행합니다.
+2. `.env.local` 또는 배포 환경변수에 `SUPABASE_URL`과 서버 전용 `SUPABASE_SECRET_KEY`를 설정합니다. 기존 `service_role` 키를 쓰는 경우 `SUPABASE_SERVICE_ROLE_KEY`도 사용할 수 있습니다. 현재 익명 저장 흐름은 `NEXT_PUBLIC_SUPABASE_URL`과 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`도 지원합니다.
+3. 보고서 결과 화면에서 `보고서 저장`을 누르면 `/api/reports`가 Supabase에 저장하고, `새 탭에서 확인`은 저장된 보고서를 다시 조회합니다.
+4. Supabase 환경변수가 없거나 연결에 실패하면 기존 브라우저 임시 저장으로 fallback합니다.
+
+Secret/service-role 키는 브라우저 코드나 `NEXT_PUBLIC_*` 변수에 넣지 마세요. 저장 API는 서버 Route Handler에서만 Supabase REST Data API를 호출합니다.
+
 ## Included Shape
 
 - edit site code under `app/`
