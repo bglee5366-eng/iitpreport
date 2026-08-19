@@ -75,3 +75,33 @@ select { height:44px; padding:0 13px; font-size:13px; }
 @media (max-width:800px) { .app-shell { padding:0 20px 28px; }.topbar { height:68px; }.intro { padding:52px 0 35px; }.workspace-grid { grid-template-columns:1fr; }.result-card { min-height:520px; }.empty-state { min-height:390px; } }
 @media (max-width:560px) { .segmented-control { grid-template-columns:1fr; } }
 @media (max-width:460px) { .control-card,.result-card { padding:23px 19px; border-radius:14px; }.source-list { grid-template-columns:1fr; }.intro h1 { font-size:38px; }.page-footer { gap:12px; flex-direction:column; }.report-preview { padding:18px; } }
+.save-report-button,
+.open-report-button {
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: 999px;
+  padding: 9px 13px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.open-report-button { background: transparent; color: var(--ink); }
+.save-report-button:hover, .open-report-button:hover { transform: translateY(-1px); }
+
+.saved-report-page { min-height: 100vh; background: var(--paper); color: var(--ink); padding: 0 6vw 80px; }
+.saved-report-topbar { max-width: 1180px; margin: 0 auto; padding: 24px 0; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.saved-report-header, .saved-provider-results { max-width: 1180px; margin: 0 auto; }
+.saved-report-header { padding: 64px 0 32px; }
+.saved-report-header h1 { margin: 10px 0; font-size: clamp(30px, 5vw, 58px); letter-spacing: -.05em; }
+.saved-report-header p { color: var(--muted); }
+.saved-report-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+.saved-report-meta span { border: 1px solid var(--line); border-radius: 999px; padding: 8px 12px; font-size: 12px; }
+.saved-provider-results { display: grid; gap: 20px; }
+.saved-provider-report { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 24px; box-shadow: 0 12px 30px rgba(29, 28, 25, .06); }
+.saved-provider-heading { display: flex; justify-content: space-between; align-items: start; gap: 16px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+.saved-provider-heading h2 { margin: 4px 0 0; }
+.saved-report-text { white-space: pre-wrap; line-height: 1.8; margin: 22px 0; }
+.saved-report-empty { max-width: 640px; margin: 20vh auto; text-align: center; }
+.saved-report-empty a { display: inline-block; margin-top: 20px; color: inherit; }

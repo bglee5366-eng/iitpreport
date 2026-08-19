@@ -89,13 +89,15 @@ function collectOpenAIData(response: any): { sources: SearchSource[]; annotation
 }
 
 function collectGeminiData(response: any): { sources: SearchSource[]; supports: any[] } {
-  const grounding = response?.candidates?.[0]?.groundingMetadata;
-  const chunks = Array.isArray(grounding?.groundingChunks) ? grounding.groundingChunks : [];
+  const candidates = Array.isArray(response?.candidates) ? response.candidates : [];
+  const groundings = candidates.map((candidate: any) => candidate?.groundingMetadata).filter(Boolean);
+  const chunks = groundings.flatMap((grounding: any) => Array.isArray(grounding?.groundingChunks) ? grounding.groundingChunks : []);
   const sources = chunks.flatMap((chunk: any) => {
     const url = chunk?.web?.uri ?? chunk?.web?.url ?? chunk?.url;
     return isHttpUrl(url) ? [{ title: chunk?.web?.title || chunk?.title || "Gemini Google Search 출처", url }] : [];
   });
-  return { sources, supports: Array.isArray(grounding?.groundingSupports) ? grounding.groundingSupports : [] };
+  const supports = groundings.flatMap((grounding: any) => Array.isArray(grounding?.groundingSupports) ? grounding.groundingSupports : []);
+  return { sources, supports };
 }
 
 function cleanGeneratedText(text: string): string {
@@ -157,7 +159,7 @@ function buildPrompt(input: SearchInput): string {
 - 현황, 핵심 쟁점, 원인·영향, 근거 자료, 대응방향, 실행계획, 기대효과, 향후계획을 빠짐없이 다루세요. 업로드 양식이 있으면 양식의 항목명으로 대응하세요.
 - 사실·수치·날짜·기관명은 검색 근거가 있을 때만 쓰고, 근거가 부족하면 '확인 필요'로 표시하세요.
 - 보고서 본문에는 검색 결과에서 확인한 출처를 [출처 1], [출처 2]처럼 표시하세요.`;
-  return `당신은 한국어 이슈 대응·성과 보고서 작성자입니다. 아래 이슈를 웹 검색으로 조사해 사실과 출처를 확인하세요.
+  return `당신은 한국어 이슈 대응·성과 보고서 작성자입니다. 반드시 Google Search를 호출해 최신 자료를 조사하고, 검색 결과에 근거해 사실과 출처를 확인하세요. 검색을 생략하거나 기억에만 의존하지 마세요.
 
 이슈 입력:
 ${input.query?.slice(0, 5000) ?? ""}
@@ -252,7 +254,7 @@ async function runGemini(input: SearchInput, key: string, maxSources: number): P
   const started = Date.now();
   try {
     const timeRangeFilter = geminiTimeRangeFilter(input.period);
-    const googleSearchTool = timeRangeFilter ? { google_search: { timeRangeFilter } } : { google_search: {} };
+    const googleSearchTool = timeRangeFilter ? { google_search: { timeRangeFilter, searchTypes: { webSearch: {} } } } : { google_search: { searchTypes: { webSearch: {} } } };
     const response = await fetchJson(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify({ contents: [{ parts: [{ text: buildPrompt(input) }] }], tools: [googleSearchTool], generationConfig: { thinkingConfig: { thinkingLevel: "medium" }, maxOutputTokens: 8000 } }) });
     const data = collectGeminiData(response);
     const sources = dedupeSources(data.sources, maxSources);
