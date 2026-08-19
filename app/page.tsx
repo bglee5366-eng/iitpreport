@@ -3,6 +3,8 @@
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { readStoredReports, saveStoredReport } from "../lib/report-storage";
 import type { StoredReport } from "../lib/report-storage";
+import { MAX_SAVED_TEMPLATES, readStoredTemplates, removeStoredTemplate, saveStoredTemplate } from "../lib/template-storage";
+import type { StoredTemplate } from "../lib/template-storage";
 
 type ReportType = "one-page" | "two-page" | "status-response";
 type SearchPeriod = "7d" | "30d" | "1y" | "all";
@@ -64,6 +66,7 @@ export default function Home() {
   const [templateFileName, setTemplateFileName] = useState("");
   const [templateMarkdown, setTemplateMarkdown] = useState("");
   const [templateError, setTemplateError] = useState("");
+  const [savedTemplates, setSavedTemplates] = useState<StoredTemplate[]>([]);
   const [copiedResult, setCopiedResult] = useState("");
   const [savedReportId, setSavedReportId] = useState("");
   const [savingReport, setSavingReport] = useState(false);
@@ -77,6 +80,10 @@ export default function Home() {
     setGeminiKey(storedGeminiKey);
     setClaudeKey(storedClaudeKey);
     if (storedOpenAIKey || storedGeminiKey || storedClaudeKey) setSessionStatus("saved");
+  }, []);
+
+  useEffect(() => {
+    setSavedTemplates(readStoredTemplates());
   }, []);
 
   useEffect(() => {
@@ -151,6 +158,7 @@ export default function Home() {
       if (!response.ok || payload.status !== "completed") throw new Error(payload.error ?? "문서 분석에 실패했습니다.");
       setTemplateMarkdown(payload.markdown ?? "");
       setTemplateStatus("completed");
+      setSavedTemplates(saveStoredTemplate({ id: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `template-${Date.now()}`, fileName: file.name, markdown: payload.markdown ?? "", savedAt: new Date().toISOString() }));
     } catch (error: unknown) {
       setTemplateStatus("error");
       setTemplateError(error instanceof Error && error.name === "TimeoutError" ? "문서 분석이 120초를 초과했습니다." : error instanceof Error ? error.message : "문서 분석 중 알 수 없는 오류가 발생했습니다.");
@@ -191,6 +199,22 @@ export default function Home() {
     setApiError("");
     setCopiedResult("");
     setSavedReportId("");
+  }
+
+  function applyTemplate(template: StoredTemplate) {
+    setTemplateFileName(template.fileName);
+    setTemplateMarkdown(template.markdown);
+    setTemplateStatus("completed");
+    setTemplateError("");
+  }
+
+  function deleteTemplate(templateId: string) {
+    setSavedTemplates(removeStoredTemplate(templateId));
+    if (savedTemplates.find((template) => template.id === templateId)?.fileName === templateFileName) {
+      setTemplateFileName("");
+      setTemplateMarkdown("");
+      setTemplateStatus("idle");
+    }
   }
 
   async function handleSaveReport() {
@@ -302,6 +326,7 @@ export default function Home() {
             <label className="template-upload" htmlFor="template-file"><span className="upload-icon">↑</span><span><strong>문서 양식 업로드</strong><small>파일을 선택하면 서버에서 구조를 분석합니다 · 최대 25MB</small></span><input id="template-file" type="file" accept=".hwp,.hwpx,.docx,.pdf,.xlsx,.xls" onChange={handleTemplateUpload} /></label>
             {templateFileName && <div className="template-file-status"><span className={templateStatus === "completed" ? "file-status-dot complete" : templateStatus === "error" ? "file-status-dot error" : "file-status-dot"} /> <strong>{templateFileName}</strong><span>{templateStatus === "uploading" ? "분석 중..." : templateStatus === "completed" ? "분석 완료 · 생성 프롬프트에 반영됨" : templateStatus === "error" ? "분석 실패" : "대기 중"}</span></div>}
             {templateError && <div className="template-error" role="alert">{templateError}</div>}
+            <div className="saved-templates"><div className="saved-templates-heading"><strong>저장된 양식</strong><span>{savedTemplates.length}/{MAX_SAVED_TEMPLATES}</span></div>{savedTemplates.length ? <div className="saved-templates-list">{savedTemplates.map((template) => <div className={`saved-template-row ${templateFileName === template.fileName && templateMarkdown === template.markdown ? "selected" : ""}`} key={template.id}><button type="button" className="saved-template-select" onClick={() => applyTemplate(template)}><span className="template-select-mark" /> <span><strong>{template.fileName}</strong><small>분석 완료 · {new Date(template.savedAt).toLocaleDateString("ko-KR")}</small></span></button><button type="button" className="saved-template-delete" aria-label={`${template.fileName} 삭제`} onClick={() => deleteTemplate(template.id)}>×</button></div>)}</div> : <p>분석을 완료한 양식이 여기에 저장됩니다.</p>}</div>
           </div>
           <div className="key-settings">
             <div className="key-settings-heading"><div><span className="step-label">05</span><h2>API 키 설정</h2></div><span className="session-only-badge">이 브라우저 세션만</span></div>

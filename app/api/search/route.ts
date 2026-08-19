@@ -129,8 +129,19 @@ function textFromGemini(response: any): string {
     }
   } else {
     visit(response?.output);
+    visit(response?.steps);
   }
   return [...new Set(texts)].join("\n\n");
+}
+
+async function runGeminiInteractions(input: SearchInput, key: string): Promise<{ text: string; sources: SearchSource[]; searchQueries: string[] }> {
+  const response = await fetchJson("https://generativelanguage.googleapis.com/v1beta/interactions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+    body: JSON.stringify({ model: GEMINI_MODEL, input: buildPrompt(input), tools: [{ type: "google_search" }] }),
+  });
+  const data = collectGeminiData(response);
+  return { text: textFromGemini(response), sources: data.sources, searchQueries: data.searchQueries };
 }
 
 function cleanGeneratedText(text: string): string {
@@ -191,7 +202,7 @@ function buildPrompt(input: SearchInput): string {
 - 각 섹션은 최소 2개 이상의 구체적인 문단 또는 항목으로 구성하고, 전체 분량은 한국어 기준 최소 2,500자 이상을 목표로 하세요.
 - 현황, 핵심 쟁점, 원인·영향, 근거 자료, 대응방향, 실행계획, 기대효과, 향후계획을 빠짐없이 다루세요. 업로드 양식이 있으면 양식의 항목명으로 대응하세요.
 - 사실·수치·날짜·기관명은 검색 근거가 있을 때만 쓰고, 근거가 부족하면 '확인 필요'로 표시하세요.
-- 보고서 본문에는 검색 결과에서 확인한 출처를 [출처 1], [출처 2]처럼 표시하세요.`;
+- 실제 검색 도구가 반환한 URL 출처가 있을 때만 [출처 1], [출처 2]처럼 표시하세요. 검색 출처가 반환되지 않으면 출처 번호를 만들지 말고 '출처 확인 필요'로 표시하세요.`;
   return `당신은 한국어 이슈 대응·성과 보고서 작성자입니다. 답변을 작성하기 전에 반드시 Google Search 도구를 실행하세요. 최소 3개의 서로 다른 최신 웹 출처를 검색하고, 검색 결과에 근거해 사실과 출처를 확인하세요. 검색을 생략하거나 기억에만 의존하지 마세요. 검색 호출과 출처가 없는 답변은 완료된 보고서로 제출하지 마세요.
 
 이슈 입력:
@@ -290,7 +301,19 @@ async function runGemini(input: SearchInput, key: string, maxSources: number): P
     const timeRangeFilter = geminiTimeRangeFilter(input.period);
     const googleSearchTool = timeRangeFilter ? { google_search: { timeRangeFilter } } : { google_search: {} };
     const response = await fetchJson(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify({ contents: [{ parts: [{ text: buildPrompt(input) }] }], tools: [googleSearchTool], generationConfig: { thinkingConfig: { thinkingLevel: "medium" }, maxOutputTokens: 8000 } }) });
-    const data = collectGeminiData(response);
+    let data = collectGeminiData(response);
+    let rawText = textFromGemini(response);
+    if (!data.sources.length) {
+      try {
+        const interaction = await runGeminiInteractions(input, key);
+        if (interaction.sources.length) {
+          data = { sources: interaction.sources, supports: [], searchQueries: interaction.searchQueries };
+          rawText = interaction.text || rawText;
+        }
+      } catch {
+        // Keep the successful legacy response and show a precise no-grounding warning below.
+      }
+    }
     const sources = dedupeSources(data.sources, maxSources);
     const sourceIndex = new Map(sources.map((source, index) => [normalizeUrl(source.url), index]));
     const references = data.supports.flatMap((support: any) => (support.groundingChunkIndices ?? []).flatMap((chunkIndex: number) => {
@@ -298,9 +321,9 @@ async function runGemini(input: SearchInput, key: string, maxSources: number): P
       const index = uri ? sourceIndex.get(normalizeUrl(uri)) : undefined;
       return index === undefined ? [] : [{ start: support.segment?.startIndex ?? -1, end: support.segment?.endIndex ?? -1, sourceIndex: index }];
     }));
-    const rawText = textFromGemini(response);
-    const text = cleanGeneratedText(rawText);
+    const cleanedText = cleanGeneratedText(rawText);
     const finalSources = dedupeSources([...sources, ...collectTextLinks(rawText)], maxSources);
+    const text = finalSources.length ? cleanedText : cleanedText.replace(/\[출처\s*\d+\]/g, "[출처 확인 필요]");
     const finalIndex = new Map(finalSources.map((source, index) => [normalizeUrl(source.url), index]));
     const finalReferences = references.flatMap((reference) => {
       const source = sources[reference.sourceIndex];
