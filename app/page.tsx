@@ -1,7 +1,7 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
-import { saveStoredReport } from "../lib/report-storage";
+import { readStoredReports, saveStoredReport } from "../lib/report-storage";
 import type { StoredReport } from "../lib/report-storage";
 
 type ReportType = "one-page" | "two-page" | "status-response";
@@ -11,7 +11,7 @@ type SearchStatus = "idle" | "loading" | "done";
 type TemplateStatus = "idle" | "uploading" | "completed" | "error";
 
 type SearchSource = { title: string; url: string };
-type ProviderResult = { status: "success" | "error" | "skipped"; text?: string; sources: SearchSource[]; error?: string; warning?: string; responseMs?: number; model: string };
+type ProviderResult = { status: "success" | "error" | "skipped"; text?: string; sources: SearchSource[]; error?: string; warning?: string; searchQueries?: string[]; responseMs?: number; model: string };
 type SearchResults = { openai: ProviderResult; gemini: ProviderResult; claude: ProviderResult };
 
 const OPENAI_SESSION_KEY = "issuebrief.openai-api-key";
@@ -39,7 +39,7 @@ function ProviderResultCard({ name, result, copied, onCopy }: { name: string; re
     <article className={`provider-result ${result.status}`}>
       <div className="provider-result-heading"><div><span className="step-label">{name === "OpenAI" ? "OPENAI WEB SEARCH" : name === "Gemini" ? "GEMINI GOOGLE SEARCH" : "CLAUDE ANALYSIS"}</span><h3>{name}</h3></div><div className="provider-result-actions">{result.status === "success" && <button type="button" className="copy-button" onClick={onCopy}>{copied ? "복사 완료" : "결과 복사"}</button>}<span className="provider-status">{result.status === "success" ? `성공 · ${result.responseMs ?? 0}ms` : result.status === "skipped" ? "키 미입력" : "호출 실패"}</span></div></div>
       {result.status === "success" ? <>
-        {result.warning && <div className="provider-warning">{result.warning}</div>}
+        {result.warning && <div className="provider-warning">{result.warning}{result.searchQueries?.length ? <small>검색어: {result.searchQueries.join(" · ")}</small> : null}</div>}
         <div className="provider-report-text">{result.text}</div>
         <div className="provider-sources"><h4>참고 출처 <span>{result.sources.length}개</span></h4>{result.sources.length ? result.sources.map((source, index) => <a href={source.url} target="_blank" rel="noreferrer" key={source.url}>[{index + 1}] {source.title}</a>) : <p>응답에서 확인된 출처가 없습니다.</p>}</div>
       </> : <div className="provider-error"><strong>{result.status === "skipped" ? "이 API는 건너뛰었습니다." : "이 API 호출에 실패했습니다."}</strong><p>{result.error ?? "원인을 확인할 수 없습니다."}</p></div>}
@@ -67,6 +67,7 @@ export default function Home() {
   const [copiedResult, setCopiedResult] = useState("");
   const [savedReportId, setSavedReportId] = useState("");
   const [savingReport, setSavingReport] = useState(false);
+  const [savedReports, setSavedReports] = useState<StoredReport[]>([]);
 
   useEffect(() => {
     const storedOpenAIKey = sessionStorage.getItem(OPENAI_SESSION_KEY) ?? "";
@@ -77,6 +78,15 @@ export default function Home() {
     setClaudeKey(storedClaudeKey);
     if (storedOpenAIKey || storedGeminiKey || storedClaudeKey) setSessionStatus("saved");
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/reports")
+      .then(async (response) => response.ok ? (await response.json() as { reports?: StoredReport[] }).reports ?? [] : [])
+      .then((reports) => { if (active) setSavedReports(reports.length ? reports : readStoredReports()); })
+      .catch(() => { if (active) setSavedReports(readStoredReports()); });
+    return () => { active = false; };
+  }, [savedReportId]);
 
   function toggleSource(sourceId: string) {
     setSources((current) => current.includes(sourceId) ? current.filter((item) => item !== sourceId) : [...current, sourceId]);
@@ -203,15 +213,18 @@ export default function Home() {
       if (response.ok) {
         const payload = await response.json() as { report?: StoredReport };
         setSavedReportId(payload.report?.id ?? id);
+        if (payload.report) setSavedReports((current) => [payload.report as StoredReport, ...current.filter((item) => item.id !== payload.report?.id)].slice(0, 30));
         setApiError("");
       } else {
         saveStoredReport(report);
         setSavedReportId(id);
+        setSavedReports((current) => [report, ...current.filter((item) => item.id !== report.id)].slice(0, 30));
         setApiError("Supabase가 아직 설정되지 않아 이 보고서를 현재 브라우저에 임시 저장했습니다.");
       }
     } catch {
       saveStoredReport(report);
       setSavedReportId(id);
+      setSavedReports((current) => [report, ...current.filter((item) => item.id !== report.id)].slice(0, 30));
       setApiError("Supabase에 연결하지 못해 이 보고서를 현재 브라우저에 임시 저장했습니다.");
     } finally {
       setSavingReport(false);
@@ -221,6 +234,11 @@ export default function Home() {
   function handleOpenSavedReport() {
     if (!savedReportId) return;
     const reportWindow = window.open(`/report?id=${encodeURIComponent(savedReportId)}`, "_blank", "noopener,noreferrer");
+    if (!reportWindow) setApiError("새 탭을 열 수 없습니다. 브라우저의 팝업 차단을 해제해주세요.");
+  }
+
+  function openSavedReport(id: string) {
+    const reportWindow = window.open(`/report?id=${encodeURIComponent(id)}`, "_blank", "noopener,noreferrer");
     if (!reportWindow) setApiError("새 탭을 열 수 없습니다. 브라우저의 팝업 차단을 해제해주세요.");
   }
 
@@ -305,6 +323,7 @@ export default function Home() {
         <section className="result-card" aria-live="polite">
           <div className="result-header"><div><span className="step-label">RESULT</span><h2>생성 결과</h2></div>{searchResults ? <div className="result-header-actions"><button type="button" className="save-report-button" onClick={() => void handleSaveReport()} disabled={savingReport}>{savingReport ? "저장 중..." : savedReportId ? "저장 완료" : "보고서 저장"}</button>{savedReportId && <button type="button" className="open-report-button" onClick={handleOpenSavedReport}>새 탭에서 확인</button>}<button type="button" className="copy-all-button" onClick={() => void copyText(allResultsCopyText(), "all")}>{copiedResult === "all" ? "전체 복사 완료" : "전체 결과 복사"}</button><span className="preview-badge">PREVIEW</span></div> : <span className="preview-badge">PREVIEW</span>}</div>
           {!generated ? <div className="empty-state"><div className="empty-icon">✦</div><h3>보고서 초안이 이곳에 나타납니다</h3><p>왼쪽에서 이슈와 조건을 설정한 뒤<br />생성 버튼을 눌러보세요.</p><div className="empty-line" /><span>OpenAI·Gemini·Claude 결과가 각각 표시됩니다</span></div> : searchStatus === "loading" ? <div className="empty-state loading-state"><div className="empty-icon">⌁</div><h3>검색 엔진과 Claude에서 자료를 찾고 있습니다</h3><p>입력한 API 키가 있는 제공자를<br />가능한 경우 동시에 호출합니다.</p><span className="loading-note">최대 120초까지 걸릴 수 있습니다.</span></div> : searchResults ? <div className="provider-results"><ProviderResultCard name="OpenAI" result={searchResults.openai} copied={copiedResult === "openai"} onCopy={() => void copyText(providerCopyText("OpenAI", searchResults.openai), "openai")} /><ProviderResultCard name="Gemini" result={searchResults.gemini} copied={copiedResult === "gemini"} onCopy={() => void copyText(providerCopyText("Gemini", searchResults.gemini), "gemini")} /><ProviderResultCard name="Claude" result={searchResults.claude} copied={copiedResult === "claude"} onCopy={() => void copyText(providerCopyText("Claude", searchResults.claude), "claude")} /></div> : <div className="empty-state"><div className="empty-icon">!</div><h3>검색 결과를 표시할 수 없습니다</h3><p>왼쪽 오류 안내를 확인한 뒤 다시 시도해주세요.</p></div>}
+          <section className="saved-reports-panel" aria-labelledby="saved-reports-title"><div className="saved-reports-heading"><div><span className="step-label">SAVED</span><h2 id="saved-reports-title">저장된 보고서</h2></div><span>{savedReports.length}개</span></div>{savedReports.length ? <div className="saved-reports-list">{savedReports.map((report) => <article className="saved-report-row" key={report.id}><div><strong>{report.title}</strong><small>{new Date(report.createdAt).toLocaleString("ko-KR")}</small></div><button type="button" onClick={() => openSavedReport(report.id)}>새 탭에서 확인</button></article>)}</div> : <p className="saved-reports-empty">저장한 보고서가 여기에 표시됩니다.</p>}</section>
         </section>
       </div>
       <footer className="page-footer"><span>이슈브리프</span><span>빠른 판단을 위한 보고서 초안 도구</span></footer>

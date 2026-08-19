@@ -8,7 +8,7 @@ const REQUEST_TIMEOUT_MS = 120_000;
 const MAX_SOURCES = 20;
 
 type SearchSource = { title: string; url: string };
-type ProviderResult = { status: "success" | "error" | "skipped"; text?: string; sources: SearchSource[]; error?: string; warning?: string; responseMs?: number; model: string };
+type ProviderResult = { status: "success" | "error" | "skipped"; text?: string; sources: SearchSource[]; error?: string; warning?: string; searchQueries?: string[]; responseMs?: number; model: string };
 type SearchInput = { query?: string; reportType?: string; period?: string; sources?: string[]; openAIKey?: string; geminiKey?: string; claudeKey?: string; maxSources?: number; templateFileName?: string; templateMarkdown?: string };
 
 const sourceLabels: Record<string, string> = {
@@ -88,16 +88,49 @@ function collectOpenAIData(response: any): { sources: SearchSource[]; annotation
   return { sources, annotations };
 }
 
-function collectGeminiData(response: any): { sources: SearchSource[]; supports: any[] } {
-  const candidates = Array.isArray(response?.candidates) ? response.candidates : [];
-  const groundings = candidates.map((candidate: any) => candidate?.groundingMetadata).filter(Boolean);
-  const chunks = groundings.flatMap((grounding: any) => Array.isArray(grounding?.groundingChunks) ? grounding.groundingChunks : []);
-  const sources = chunks.flatMap((chunk: any) => {
-    const url = chunk?.web?.uri ?? chunk?.web?.url ?? chunk?.url;
-    return isHttpUrl(url) ? [{ title: chunk?.web?.title || chunk?.title || "Gemini Google Search 출처", url }] : [];
-  });
-  const supports = groundings.flatMap((grounding: any) => Array.isArray(grounding?.groundingSupports) ? grounding.groundingSupports : []);
-  return { sources, supports };
+function collectGeminiData(response: any): { sources: SearchSource[]; supports: any[]; searchQueries: string[] } {
+  const sources: SearchSource[] = [];
+  const supports: any[] = [];
+  const searchQueries: string[] = [];
+  const visited = new Set<object>();
+  const visit = (value: any) => {
+    if (!value || typeof value !== "object") return;
+    if (visited.has(value)) return;
+    visited.add(value);
+    if (Array.isArray(value.groundingChunks)) {
+      for (const chunk of value.groundingChunks) {
+        const url = chunk?.web?.uri ?? chunk?.web?.url ?? chunk?.url ?? chunk?.uri;
+        if (isHttpUrl(url)) sources.push({ title: chunk?.web?.title || chunk?.title || "Gemini Google Search 출처", url });
+      }
+    }
+    if (Array.isArray(value.groundingSupports)) supports.push(...value.groundingSupports);
+    if (Array.isArray(value.webSearchQueries)) searchQueries.push(...value.webSearchQueries.filter((query: unknown): query is string => typeof query === "string" && Boolean(query.trim())));
+    const citationUrl = value.type === "url_citation" || value.type === "urlCitation" ? value.url ?? value.uri : undefined;
+    if (isHttpUrl(citationUrl)) sources.push({ title: value.title || "Gemini Google Search 출처", url: citationUrl });
+    for (const child of Object.values(value)) visit(child);
+  };
+  visit(response);
+  return { sources, supports, searchQueries: [...new Set(searchQueries)] };
+}
+
+function textFromGemini(response: any): string {
+  const texts: string[] = [];
+  const visited = new Set<object>();
+  const visit = (value: any) => {
+    if (!value || typeof value !== "object") return;
+    if (visited.has(value)) return;
+    visited.add(value);
+    if (value.type === "text" && typeof value.text === "string") texts.push(value.text);
+    for (const child of Object.values(value)) visit(child);
+  };
+  if (Array.isArray(response?.candidates)) {
+    for (const candidate of response.candidates) {
+      for (const part of candidate?.content?.parts ?? []) if (typeof part?.text === "string") texts.push(part.text);
+    }
+  } else {
+    visit(response?.output);
+  }
+  return [...new Set(texts)].join("\n\n");
 }
 
 function cleanGeneratedText(text: string): string {
@@ -159,7 +192,7 @@ function buildPrompt(input: SearchInput): string {
 - 현황, 핵심 쟁점, 원인·영향, 근거 자료, 대응방향, 실행계획, 기대효과, 향후계획을 빠짐없이 다루세요. 업로드 양식이 있으면 양식의 항목명으로 대응하세요.
 - 사실·수치·날짜·기관명은 검색 근거가 있을 때만 쓰고, 근거가 부족하면 '확인 필요'로 표시하세요.
 - 보고서 본문에는 검색 결과에서 확인한 출처를 [출처 1], [출처 2]처럼 표시하세요.`;
-  return `당신은 한국어 이슈 대응·성과 보고서 작성자입니다. 반드시 Google Search를 호출해 최신 자료를 조사하고, 검색 결과에 근거해 사실과 출처를 확인하세요. 검색을 생략하거나 기억에만 의존하지 마세요.
+  return `당신은 한국어 이슈 대응·성과 보고서 작성자입니다. 답변을 작성하기 전에 반드시 Google Search 도구를 실행하세요. 최소 3개의 서로 다른 최신 웹 출처를 검색하고, 검색 결과에 근거해 사실과 출처를 확인하세요. 검색을 생략하거나 기억에만 의존하지 마세요. 검색 호출과 출처가 없는 답변은 완료된 보고서로 제출하지 마세요.
 
 이슈 입력:
 ${input.query?.slice(0, 5000) ?? ""}
@@ -167,6 +200,7 @@ ${input.query?.slice(0, 5000) ?? ""}
 보고서 유형: ${input.reportType ?? "현황 · 문제점 · 대응방향 · 향후계획"}
 검색 기간: ${periodText[period] ?? period} (이 기간의 자료를 우선 검색하고, 오래된 자료는 배경 설명에만 사용)
 검색 소스 유형: ${selectedSources}
+검색 실행 지시: 먼저 이슈 입력을 검색어로 사용해 Google Search를 호출하고, 공식·연구·뉴스 등 서로 다른 출처를 최소 3개 확보하세요.
 
 ${formatInstruction}
 
@@ -254,7 +288,7 @@ async function runGemini(input: SearchInput, key: string, maxSources: number): P
   const started = Date.now();
   try {
     const timeRangeFilter = geminiTimeRangeFilter(input.period);
-    const googleSearchTool = timeRangeFilter ? { google_search: { timeRangeFilter, searchTypes: { webSearch: {} } } } : { google_search: { searchTypes: { webSearch: {} } } };
+    const googleSearchTool = timeRangeFilter ? { google_search: { timeRangeFilter } } : { google_search: {} };
     const response = await fetchJson(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify({ contents: [{ parts: [{ text: buildPrompt(input) }] }], tools: [googleSearchTool], generationConfig: { thinkingConfig: { thinkingLevel: "medium" }, maxOutputTokens: 8000 } }) });
     const data = collectGeminiData(response);
     const sources = dedupeSources(data.sources, maxSources);
@@ -264,7 +298,7 @@ async function runGemini(input: SearchInput, key: string, maxSources: number): P
       const index = uri ? sourceIndex.get(normalizeUrl(uri)) : undefined;
       return index === undefined ? [] : [{ start: support.segment?.startIndex ?? -1, end: support.segment?.endIndex ?? -1, sourceIndex: index }];
     }));
-    const rawText = response?.candidates?.[0]?.content?.parts?.map((part: any) => part.text).filter(Boolean).join("\n\n") ?? "";
+    const rawText = textFromGemini(response);
     const text = cleanGeneratedText(rawText);
     const finalSources = dedupeSources([...sources, ...collectTextLinks(rawText)], maxSources);
     const finalIndex = new Map(finalSources.map((source, index) => [normalizeUrl(source.url), index]));
@@ -273,7 +307,8 @@ async function runGemini(input: SearchInput, key: string, maxSources: number): P
       const index = source ? finalIndex.get(normalizeUrl(source.url)) : undefined;
       return index === undefined ? [] : [{ ...reference, sourceIndex: index }];
     });
-    return { status: "success", text: addCitationMarkers(text, finalSources, finalReferences), sources: finalSources, warning: finalSources.length ? undefined : "Gemini 응답에 검색 출처가 포함되지 않았습니다. Search Grounding 권한과 검색 호출 상태를 확인하세요.", responseMs: Date.now() - started, model: GEMINI_MODEL };
+    const warning = finalSources.length ? undefined : data.searchQueries.length ? "Gemini가 검색은 실행했지만 출처 URL을 응답에 포함하지 않았습니다." : "Gemini가 Google Search를 실행하지 않았습니다. Search Grounding 권한·결제 설정과 모델의 검색 호출 상태를 확인하세요.";
+    return { status: "success", text: addCitationMarkers(text, finalSources, finalReferences), sources: finalSources, searchQueries: data.searchQueries, warning, responseMs: Date.now() - started, model: GEMINI_MODEL };
   } catch (error: unknown) {
     if (error instanceof ProviderHttpError && (error.status === 400 || error.status === 404 || error.status >= 500)) {
       try {

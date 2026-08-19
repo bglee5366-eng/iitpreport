@@ -44,13 +44,15 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   const id = new URL(request.url).searchParams.get("id");
-  if (!id) return Response.json({ error: "보고서 ID가 필요합니다." }, { status: 400 });
   if (!supabaseConfig()) return Response.json({ configured: false, error: "Supabase 환경변수가 설정되지 않았습니다." }, { status: 503 });
   try {
-    const query = `reports?select=*&id=eq.${encodeURIComponent(id)}&owner_id=eq.${encodeURIComponent(ownerId(request))}&limit=1`;
+    const query = id
+      ? `reports?select=*&id=eq.${encodeURIComponent(id)}&owner_id=eq.${encodeURIComponent(ownerId(request))}&limit=1`
+      : `reports?select=*&owner_id=eq.${encodeURIComponent(ownerId(request))}&order=created_at.desc&limit=30`;
     const response = await supabaseRequest(query);
     if (!response.ok) return Response.json({ error: `Supabase 조회 실패 (${response.status})`, detail: await response.text() }, { status: 502 });
     const rows = await response.json() as any[];
+    if (!id) return Response.json({ configured: true, reports: rows.map(reportFromRow) });
     if (!rows[0]) return Response.json({ error: "저장된 보고서를 찾을 수 없습니다." }, { status: 404 });
     return Response.json({ configured: true, report: reportFromRow(rows[0]) });
   } catch (error) {
