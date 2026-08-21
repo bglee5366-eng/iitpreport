@@ -2,6 +2,7 @@ import JSZip from "jszip";
 import PDFDocument from "pdfkit";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 export const runtime = "nodejs";
 
@@ -56,23 +57,25 @@ async function createDocx(report: ExportReport): Promise<Buffer> {
 }
 
 async function createHwpx(report: ExportReport): Promise<Buffer> {
-  const zip = new JSZip();
-  const paragraphs = linesFor(report).map((line) => `<hp:p paraPrIDRef="0" styleIDRef="0"><hp:run><hp:t>${xml(line || " ")}</hp:t></hp:run></hp:p>`).join("");
-  zip.file("mimetype", "application/hwp+zip");
-  zip.file("version.xml", `<?xml version="1.0" encoding="UTF-8"?><hv:HCFVersion xmlns:hv="http://www.hancom.co.kr/hwpml/2011/version" tagetApplication="WORDPROCESSOR" major="5" minor="1" micro="0" buildNumber="1" os="1" xmlVersion="1.2" application="Hancom Office Hangul" appVersion="11, 0, 0, 2129 WIN32LEWindows_8"/>`);
-  zip.file("settings.xml", `<?xml version="1.0" encoding="UTF-8"?><ha:HWPApplicationSetting xmlns:ha="http://www.hancom.co.kr/hwpml/2011/app" xmlns:config="urn:oasis:names:tc:opendocument:xmlns:config:1.0"><ha:CaretPosition listIDRef="0" paraIDRef="0" pos="0"/></ha:HWPApplicationSetting>`);
-  zip.file("META-INF/container.xml", `<?xml version="1.0" encoding="UTF-8"?><ocf:container xmlns:ocf="urn:oasis:names:tc:opendocument:xmlns:container" xmlns:hpf="http://www.hancom.co.kr/schema/2011/hpf"><ocf:rootfiles><ocf:rootfile full-path="Contents/content.hpf" media-type="application/hwpml-package+xml"/><ocf:rootfile full-path="Preview/PrvText.txt" media-type="text/plain"/><ocf:rootfile full-path="META-INF/container.rdf" media-type="application/rdf+xml"/></ocf:rootfiles></ocf:container>`);
-  zip.file("META-INF/container.rdf", `<?xml version="1.0" encoding="UTF-8"?><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"/>`);
-  zip.file("META-INF/manifest.xml", `<?xml version="1.0" encoding="UTF-8"?><odf:manifest xmlns:odf="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"/>`);
-  zip.file("Preview/PrvText.txt", report.title);
-  zip.file("Contents/content.hpf", `<?xml version="1.0" encoding="UTF-8"?><opf:package xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core" xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" xmlns:opf="http://www.idpf.org/2007/opf/" version="1.0" unique-identifier="document" id="document"><opf:metadata><opf:title>${xml(report.title)}</opf:title><opf:language>ko</opf:language></opf:metadata><opf:manifest><opf:item id="section0" href="section0.xml" media-type="application/xml"/></opf:manifest><opf:spine><opf:itemref idref="section0"/></opf:spine></opf:package>`);
-  zip.file("Contents/header.xml", `<?xml version="1.0" encoding="UTF-8"?><hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" version="1.4" secCnt="1"><hh:beginNum page="1" footnote="1" endnote="1" /><hh:compatibleDocument targetProgram="HWP" targetVersion="50304"/></hh:head>`);
-  zip.file("Contents/section0.xml", `<?xml version="1.0" encoding="UTF-8"?><hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core"><hs:p><hp:run><hp:t>${xml(report.title)}</hp:t></hp:run></hs:p>${paragraphs}</hs:sec>`);
+  const templatePath = fileURLToPath(new URL("./report-template.hwpx", import.meta.url));
+  if (!fs.existsSync(templatePath)) throw new Error("HWPX 기본 문서 템플릿을 찾을 수 없습니다.");
+  const zip = await JSZip.loadAsync(fs.readFileSync(templatePath));
+  const sectionFile = zip.file("Contents/section0.xml");
+  if (!sectionFile) throw new Error("HWPX 기본 문서의 본문 영역을 찾을 수 없습니다.");
+  const section = await sectionFile.async("string");
+  const lines = linesFor(report);
+  const firstParagraph = section.match(/<hp:p\b[\s\S]*?<\/hp:p>/)?.[0];
+  if (!firstParagraph) throw new Error("HWPX 본문 문단 구조를 읽을 수 없습니다.");
+  const titleParagraph = firstParagraph.replace("<hp:t/>", `<hp:t>${xml(lines[0] ?? report.title)}</hp:t>`);
+  const paragraphs = lines.slice(1).map((line, index) => `<hp:p id="${Date.now() + index}" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="0"><hp:t>${xml(line || " ")}</hp:t></hp:run></hp:p>`).join("");
+  zip.file("Contents/section0.xml", section.replace(firstParagraph, `${titleParagraph}${paragraphs}`));
+  zip.file("Preview/PrvText.txt", lines.join("\n"));
   return zip.generateAsync({ type: "nodebuffer", mimeType: "application/hwp+zip", compression: "DEFLATE" });
 }
 
 function createPdf(report: ExportReport): Promise<Buffer> {
-  const fontPath = path.join(process.cwd(), "public", "fonts", "NotoSansKR-VF.ttf");
+  const bundledFontPath = fileURLToPath(new URL("./NotoSansKR-VF.ttf", import.meta.url));
+  const fontPath = fs.existsSync(bundledFontPath) ? bundledFontPath : path.join(process.cwd(), "public", "fonts", "NotoSansKR-VF.ttf");
   if (!fs.existsSync(fontPath)) throw new Error("PDF용 한글 글꼴 파일을 찾을 수 없습니다.");
   return new Promise((resolve, reject) => {
     const document = new PDFDocument({ size: "A4", margin: 50 });
