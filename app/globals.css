@@ -11,6 +11,7 @@ button,textarea,select { font:inherit; }
 .intro { padding:74px 0 50px; max-width:700px; }
 .eyebrow,.step-label { color:var(--orange); font-size:11px; font-weight:800; letter-spacing:.15em; }
 .intro h1 { font-size:clamp(37px,4.5vw,66px); line-height:1.12; letter-spacing:-.075em; margin:20px 0 18px; font-weight:800; }
+.intro-title-line { display:block; white-space:nowrap; font-size:.65em; letter-spacing:-.06em; }
 .intro h1 em { color:var(--green); font-style:normal; }
 .intro p { color:var(--muted); font-size:16px; line-height:1.6; margin:0; letter-spacing:-.02em; }
 .workspace-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.02fr); gap:22px; align-items:start; }

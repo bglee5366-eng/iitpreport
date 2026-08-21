@@ -305,7 +305,7 @@ export default function Home() {
         <a className="brand" href="/" aria-label="이슈브리프 홈"><span className="brand-mark">↗</span><span>이슈브리프</span></a>
         <div className="topbar-meta"><span className="status-dot" /><span>초안 생성기</span></div>
       </header>
-      <section className="intro"><div className="eyebrow">ISSUE RESPONSE / DRAFT BUILDER</div><h1>복잡한 이슈를<br /><em>한 장의 보고서</em>로 정리하세요.</h1><p>키워드나 기사 본문을 입력하면 핵심 현황과 대응 방향을 빠르게 구조화합니다.</p></section>
+      <section className="intro"><div className="eyebrow">ISSUE RESPONSE / DRAFT BUILDER</div><h1>복잡한 이슈를<br /><span className="intro-title-line"><em>한 장의 보고서</em>로 정리하세요.</span></h1><p>키워드나 기사 본문을 입력하면 핵심 현황과 대응 방향을 빠르게 구조화합니다.</p></section>
       <div className="workspace-grid">
         <section className="saved-reports-panel saved-reports-top" aria-labelledby="saved-reports-title"><div className="saved-reports-heading"><div><span className="step-label">SAVED</span><h2 id="saved-reports-title">저장된 보고서</h2></div><span>{savedReports.length}개</span></div>{savedReports.length ? <div className="saved-reports-list">{savedReports.map((report) => <article className="saved-report-row" key={report.id}><div><strong>{report.title}</strong><small>{new Date(report.createdAt).toLocaleString("ko-KR")}</small></div><button type="button" onClick={() => openSavedReport(report.id)}>새 탭에서 확인</button></article>)}</div> : <p className="saved-reports-empty">저장한 보고서가 여기에 표시됩니다.</p>}</section>
         <form className="control-card" onSubmit={handleSubmit}>
