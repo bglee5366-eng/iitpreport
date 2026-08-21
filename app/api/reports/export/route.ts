@@ -3,10 +3,6 @@ import fontDataUrl from "./NotoSansKR-VF.ttf?inline";
 import templateDataUrl from "./report-template.hwpx?inline";
 import { createRequire } from "node:module";
 
-// PDFKit is CommonJS and expects Node's module globals. Keep it external and
-// load it through Node's require instead of bundling it into an ESM handler.
-const PDFDocument = createRequire(import.meta.url)("pdfkit") as typeof import("pdfkit").default;
-
 export const runtime = "nodejs";
 
 type ReportSource = { title: string; url: string };
@@ -86,6 +82,9 @@ async function createHwpx(report: ExportReport): Promise<Buffer> {
 }
 
 function createPdf(report: ExportReport): Promise<Buffer> {
+  // Load PDFKit only when PDF export is requested so module-load failures are
+  // caught by POST's error handler instead of becoming an unhandled 500.
+  const PDFDocument = createRequire(import.meta.url)("pdfkit") as typeof import("pdfkit").default;
   const fontBuffer = bundledAsset(fontDataUrl, "PDF용 한글 글꼴 파일");
   return new Promise((resolve, reject) => {
     const document = new PDFDocument({ size: "A4", margin: 50 });
