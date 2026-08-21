@@ -27,6 +27,10 @@ function bundledAsset(value: string, label: string): Buffer {
   return Buffer.from(value.slice(separator + 1), "base64");
 }
 
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
+}
+
 function xml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
@@ -109,7 +113,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json() as { format?: string; report?: ExportReport };
     const format = body.format?.toLowerCase();
-    if (!body.report || !["docx", "hwpx", "pdf"].includes(format ?? "")) return Response.json({ error: "지원 형식은 DOCX, HWPX, PDF입니다." }, { status: 400 });
+    if (!body.report || !["docx", "hwpx", "pdf"].includes(format ?? "")) return jsonResponse({ error: "지원 형식은 DOCX, HWPX, PDF입니다." }, 400);
     const report = body.report;
     const base = report.title.replace(/[^\p{L}\p{N}_-]+/gu, "_").slice(0, 60) || "issue-report";
     if (format === "docx") return new Response(new Uint8Array(await createDocx(report)), { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(`${base}.docx`)}` } });
@@ -117,8 +121,9 @@ export async function POST(request: Request) {
     const pdf = await createPdf(report);
     // Return PDF as base64 JSON because some server adapters coerce binary
     // Response bodies into the literal boolean string "true".
-    return Response.json({ format: "pdf", fileName: `${base}.pdf`, data: pdf.toString("base64") }, { headers: { "Cache-Control": "no-store" } });
+    return jsonResponse({ format: "pdf", fileName: `${base}.pdf`, data: pdf.toString("base64") });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "문서 생성에 실패했습니다." }, { status: 500 });
+    const message = error instanceof Error ? error.message : String(error);
+    return jsonResponse({ error: message || "문서 생성에 실패했습니다." }, 500);
   }
 }

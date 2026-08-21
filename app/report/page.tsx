@@ -40,8 +40,13 @@ export default function SavedReportPage() {
     try {
       const response = await fetch(`/api/reports/export?format=${format}&v=pdf-bytes-2`, { method: "POST", cache: "no-store", headers: { "Content-Type": "application/json", Accept: format === "pdf" ? "application/json" : "application/octet-stream" }, body: JSON.stringify({ format, report }) });
       if (!response.ok) {
-        const payload = await response.json().catch(() => null) as { error?: unknown } | null;
-        const message = payload && typeof payload.error === "string" ? payload.error : "문서 생성 API가 올바른 오류 메시지를 반환하지 않았습니다.";
+        const rawError = await response.text();
+        let message = rawError.trim();
+        try {
+          const payload = JSON.parse(rawError) as { error?: unknown };
+          if (typeof payload.error === "string") message = payload.error;
+        } catch { /* Preserve the raw server response below. */ }
+        if (!message || message === "true") message = "문서 생성 서버가 유효한 오류 내용을 반환하지 않았습니다.";
         throw new Error(message);
       }
       let blob: Blob;
