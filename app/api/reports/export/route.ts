@@ -1,8 +1,7 @@
 import JSZip from "jszip";
 import PDFDocument from "pdfkit";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import fontDataUrl from "./NotoSansKR-VF.ttf?inline";
+import templateDataUrl from "./report-template.hwpx?inline";
 
 export const runtime = "nodejs";
 
@@ -16,6 +15,13 @@ type ExportReport = {
   templateMarkdown?: string;
   results: { openai: ProviderResult; gemini: ProviderResult; claude: ProviderResult };
 };
+
+function bundledAsset(value: string, label: string): Buffer {
+  if (!value.startsWith("data:")) throw new Error(`${label}가 빌드 결과에 포함되지 않았습니다.`);
+  const separator = value.indexOf(",");
+  if (separator < 0) throw new Error(`${label} 데이터 형식이 올바르지 않습니다.`);
+  return Buffer.from(value.slice(separator + 1), "base64");
+}
 
 function xml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
@@ -57,9 +63,7 @@ async function createDocx(report: ExportReport): Promise<Buffer> {
 }
 
 async function createHwpx(report: ExportReport): Promise<Buffer> {
-  const templatePath = fileURLToPath(new URL("./report-template.hwpx", import.meta.url));
-  if (!fs.existsSync(templatePath)) throw new Error("HWPX 기본 문서 템플릿을 찾을 수 없습니다.");
-  const zip = await JSZip.loadAsync(fs.readFileSync(templatePath));
+  const zip = await JSZip.loadAsync(bundledAsset(templateDataUrl, "HWPX 기본 문서 템플릿"));
   const sectionFile = zip.file("Contents/section0.xml");
   if (!sectionFile) throw new Error("HWPX 기본 문서의 본문 영역을 찾을 수 없습니다.");
   const section = await sectionFile.async("string");
@@ -74,16 +78,14 @@ async function createHwpx(report: ExportReport): Promise<Buffer> {
 }
 
 function createPdf(report: ExportReport): Promise<Buffer> {
-  const bundledFontPath = fileURLToPath(new URL("./NotoSansKR-VF.ttf", import.meta.url));
-  const fontPath = fs.existsSync(bundledFontPath) ? bundledFontPath : path.join(process.cwd(), "public", "fonts", "NotoSansKR-VF.ttf");
-  if (!fs.existsSync(fontPath)) throw new Error("PDF용 한글 글꼴 파일을 찾을 수 없습니다.");
+  const fontBuffer = bundledAsset(fontDataUrl, "PDF용 한글 글꼴 파일");
   return new Promise((resolve, reject) => {
     const document = new PDFDocument({ size: "A4", margin: 50 });
     const chunks: Buffer[] = [];
     document.on("data", (chunk: Buffer) => chunks.push(chunk));
     document.on("end", () => resolve(Buffer.concat(chunks)));
     document.on("error", reject);
-    document.font(fontPath);
+    document.font(fontBuffer);
     linesFor(report).forEach((line, index) => {
       const heading = index === 0 || /^\s*(현황|문제점|대응방향|향후계획|참고 출처|핵심 요약|시사점|효과성|실행계획)/.test(line);
       document.fontSize(index === 0 ? 18 : heading ? 13 : 10).text(line || " ", { paragraphGap: heading ? 5 : 2, lineGap: 2 });

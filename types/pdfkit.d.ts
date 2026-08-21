@@ -11,7 +11,7 @@ declare module "pdfkit" {
 
   class PDFDocument {
     constructor(options?: PDFDocumentOptions);
-    font(src: string): this;
+    font(src: string | Buffer): this;
     fontSize(size: number): this;
     text(text: string, options?: TextOptions): this;
     on(event: string, listener: (...args: any[]) => void): this;
