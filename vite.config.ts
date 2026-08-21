@@ -49,6 +49,9 @@ export default defineConfig(async () => {
     : (await import("@cloudflare/vite-plugin")).cloudflare;
 
   return {
+    // Export assets are imported with ?inline in the Node Route Handler so
+    // deployments do not depend on the server's working directory.
+    assetsInclude: ["**/*.ttf", "**/*.hwpx"],
     // kordoc is a Node-only document parser. Load its CJS-compatible export
     // through createRequire in the Node.js Route Handler.
     ssr: {
