@@ -1,7 +1,11 @@
 import JSZip from "jszip";
-import PDFDocument from "pdfkit";
 import fontDataUrl from "./NotoSansKR-VF.ttf?inline";
 import templateDataUrl from "./report-template.hwpx?inline";
+import { createRequire } from "node:module";
+
+// PDFKit is CommonJS and expects Node's module globals. Keep it external and
+// load it through Node's require instead of bundling it into an ESM handler.
+const PDFDocument = createRequire(import.meta.url)("pdfkit") as typeof import("pdfkit").default;
 
 export const runtime = "nodejs";
 
