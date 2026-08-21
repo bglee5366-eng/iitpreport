@@ -1,7 +1,7 @@
 import JSZip from "jszip";
+import PDFDocument from "pdfkit/js/pdfkit.standalone.js";
 import fontDataUrl from "./NotoSansKR-VF.ttf?inline";
 import templateDataUrl from "./report-template.hwpx?inline";
-import { createRequire } from "node:module";
 
 export const runtime = "nodejs";
 
@@ -82,9 +82,6 @@ async function createHwpx(report: ExportReport): Promise<Buffer> {
 }
 
 function createPdf(report: ExportReport): Promise<Buffer> {
-  // Load PDFKit only when PDF export is requested so module-load failures are
-  // caught by POST's error handler instead of becoming an unhandled 500.
-  const PDFDocument = createRequire(import.meta.url)("pdfkit") as typeof import("pdfkit").default;
   const fontBuffer = bundledAsset(fontDataUrl, "PDF용 한글 글꼴 파일");
   return new Promise((resolve, reject) => {
     const document = new PDFDocument({ size: "A4", margin: 50 });

@@ -20,3 +20,8 @@ declare module "pdfkit" {
 
   export default PDFDocument;
 }
+
+declare module "pdfkit/js/pdfkit.standalone.js" {
+  const PDFDocument: typeof import("pdfkit").default;
+  export default PDFDocument;
+}
