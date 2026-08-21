@@ -40,11 +40,22 @@ export default function SavedReportPage() {
     try {
       const response = await fetch("/api/reports/export", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ format, report }) });
       if (!response.ok) throw new Error((await response.json() as { error?: string }).error ?? "문서 생성에 실패했습니다.");
-      const blob = await response.blob();
+      let blob: Blob;
+      if (format === "pdf") {
+        const payload = await response.json() as { data?: string; fileName?: string; format?: string };
+        if (!payload.data || payload.data === "true" || payload.format !== "pdf") throw new Error("서버에서 올바른 PDF 데이터를 받지 못했습니다.");
+        const binary = atob(payload.data);
+        const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+        const header = new TextDecoder().decode(bytes.subarray(0, 5));
+        if (header !== "%PDF-") throw new Error("PDF 응답 형식이 올바르지 않습니다.");
+        blob = new Blob([bytes], { type: "application/pdf" });
+      } else {
+        blob = await response.blob();
+      }
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `${report.title.replace(/[^\p{L}\p{N}_-]+/gu, "_").slice(0, 60) || "issue-report"}.${format}`;
+      link.download = format === "pdf" ? `${report.title.replace(/[^\p{L}\p{N}_-]+/gu, "_").slice(0, 60) || "issue-report"}.pdf` : `${report.title.replace(/[^\p{L}\p{N}_-]+/gu, "_").slice(0, 60) || "issue-report"}.${format}`;
       document.body.appendChild(link);
       link.click();
       link.remove();

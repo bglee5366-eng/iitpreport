@@ -115,7 +115,9 @@ export async function POST(request: Request) {
     if (format === "docx") return new Response(new Uint8Array(await createDocx(report)), { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(`${base}.docx`)}` } });
     if (format === "hwpx") return new Response(new Uint8Array(await createHwpx(report)), { headers: { "Content-Type": "application/hwp+zip", "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(`${base}.hwpx`)}` } });
     const pdf = await createPdf(report);
-    return new Response(new Uint8Array(pdf), { headers: { "Content-Type": "application/pdf", "Content-Length": String(pdf.byteLength), "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(`${base}.pdf`)}`, "Cache-Control": "no-store" } });
+    // Return PDF as base64 JSON because some server adapters coerce binary
+    // Response bodies into the literal boolean string "true".
+    return Response.json({ format: "pdf", fileName: `${base}.pdf`, data: pdf.toString("base64") }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "문서 생성에 실패했습니다." }, { status: 500 });
   }
