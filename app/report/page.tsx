@@ -38,12 +38,16 @@ export default function SavedReportPage() {
     setExporting(format);
     setExportError("");
     try {
-      const response = await fetch("/api/reports/export", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ format, report }) });
-      if (!response.ok) throw new Error((await response.json() as { error?: string }).error ?? "문서 생성에 실패했습니다.");
+      const response = await fetch(`/api/reports/export?format=${format}&v=pdf-bytes-2`, { method: "POST", cache: "no-store", headers: { "Content-Type": "application/json", Accept: format === "pdf" ? "application/json" : "application/octet-stream" }, body: JSON.stringify({ format, report }) });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { error?: unknown } | null;
+        const message = payload && typeof payload.error === "string" ? payload.error : "문서 생성 API가 올바른 오류 메시지를 반환하지 않았습니다.";
+        throw new Error(message);
+      }
       let blob: Blob;
       if (format === "pdf") {
-        const payload = await response.json() as { data?: string; fileName?: string; format?: string };
-        if (!payload.data || payload.data === "true" || payload.format !== "pdf") throw new Error("서버에서 올바른 PDF 데이터를 받지 못했습니다.");
+        const payload = await response.json().catch(() => null) as { data?: unknown; fileName?: unknown; format?: unknown } | null;
+        if (!payload || payload.data === true || typeof payload.data !== "string" || payload.format !== "pdf") throw new Error("서버에서 올바른 PDF 데이터를 받지 못했습니다.");
         const binary = atob(payload.data);
         const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
         const header = new TextDecoder().decode(bytes.subarray(0, 5));
