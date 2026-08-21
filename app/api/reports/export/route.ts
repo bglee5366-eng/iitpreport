@@ -87,7 +87,14 @@ function createPdf(report: ExportReport): Promise<Buffer> {
     const document = new PDFDocument({ size: "A4", margin: 50 });
     const chunks: Buffer[] = [];
     document.on("data", (chunk: Buffer) => chunks.push(chunk));
-    document.on("end", () => resolve(Buffer.concat(chunks)));
+    document.on("end", () => {
+      const pdf = Buffer.concat(chunks);
+      if (pdf.subarray(0, 5).toString("ascii") !== "%PDF-") {
+        reject(new Error("PDF 생성 결과가 올바른 PDF 바이너리가 아닙니다."));
+        return;
+      }
+      resolve(pdf);
+    });
     document.on("error", reject);
     document.font(fontBuffer);
     linesFor(report).forEach((line, index) => {
@@ -107,7 +114,8 @@ export async function POST(request: Request) {
     const base = report.title.replace(/[^\p{L}\p{N}_-]+/gu, "_").slice(0, 60) || "issue-report";
     if (format === "docx") return new Response(new Uint8Array(await createDocx(report)), { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(`${base}.docx`)}` } });
     if (format === "hwpx") return new Response(new Uint8Array(await createHwpx(report)), { headers: { "Content-Type": "application/hwp+zip", "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(`${base}.hwpx`)}` } });
-    return new Response(new Uint8Array(await createPdf(report)), { headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(`${base}.pdf`)}` } });
+    const pdf = await createPdf(report);
+    return new Response(new Uint8Array(pdf), { headers: { "Content-Type": "application/pdf", "Content-Length": String(pdf.byteLength), "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(`${base}.pdf`)}`, "Cache-Control": "no-store" } });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "문서 생성에 실패했습니다." }, { status: 500 });
   }
