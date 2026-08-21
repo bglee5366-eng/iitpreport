@@ -36,6 +36,19 @@ npm run build
 
 Secret/service-role 키는 브라우저 코드나 `NEXT_PUBLIC_*` 변수에 넣지 마세요. 저장 API는 서버 Route Handler에서만 Supabase REST Data API를 호출합니다.
 
+저장된 보고서는 새 탭의 `HWPX`, `DOCX`, `PDF` 버튼으로 다운로드할 수 있습니다. 양식 분석 결과(Markdown)를 함께 저장하므로 이후 다운로드 시 분석된 제목·항목 순서를 반영합니다. 기존 Supabase 보고서 데이터에 양식 분석 내용을 저장하려면 `supabase/migrations/202608210001_add_template_markdown.sql`도 실행하세요.
+
+### 문서 시각 QA
+
+로컬에 LibreOffice(`soffice`)와 Poppler(`pdftoppm`)를 설치한 뒤 아래 명령으로 DOCX/PDF를 PNG로 렌더링할 수 있습니다.
+
+```powershell
+$env:CODEX_PYTHON = "C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
+.\scripts\verify-export-renders.ps1 -Docx "$env:TEMP\issue-export-docx.docx" -Pdf "$env:TEMP\issue-export-pdf.pdf"
+```
+
+스크립트는 렌더링 도구가 없을 때 명확한 설치 오류를 내고, 도구가 준비되면 페이지 PNG를 `tmp/export-render`에 생성합니다.
+
 ## Included Shape
 
 - edit site code under `app/`

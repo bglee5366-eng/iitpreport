@@ -18,6 +18,7 @@ export type StoredReport = {
   period: string;
   sources: string[];
   templateFileName?: string;
+  templateMarkdown?: string;
   createdAt: string;
   results: {
     openai: StoredProviderResult;

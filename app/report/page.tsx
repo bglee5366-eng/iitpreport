@@ -20,6 +20,8 @@ function ProviderReport({ name, result }: { name: string; result: StoredProvider
 
 export default function SavedReportPage() {
   const [report, setReport] = useState<StoredReport | null>(null);
+  const [exporting, setExporting] = useState("");
+  const [exportError, setExportError] = useState("");
 
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("id");
@@ -31,7 +33,30 @@ export default function SavedReportPage() {
       .catch(() => setReport(localReport ?? null));
   }, []);
 
+  async function downloadReport(format: "hwpx" | "docx" | "pdf") {
+    if (!report) return;
+    setExporting(format);
+    setExportError("");
+    try {
+      const response = await fetch("/api/reports/export", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ format, report }) });
+      if (!response.ok) throw new Error((await response.json() as { error?: string }).error ?? "문서 생성에 실패했습니다.");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${report.title.replace(/[^\p{L}\p{N}_-]+/gu, "_").slice(0, 60) || "issue-report"}.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : "문서 생성에 실패했습니다.");
+    } finally {
+      setExporting("");
+    }
+  }
+
   if (!report) return <main className="saved-report-page"><div className="saved-report-empty"><h1>저장된 보고서를 찾을 수 없습니다.</h1><p>원래 탭에서 보고서를 먼저 저장한 뒤 다시 열어주세요.</p><a href="/">이슈브리프로 돌아가기</a></div></main>;
 
-  return <main className="saved-report-page"><header className="saved-report-topbar"><a className="brand" href="/"><span className="brand-mark">↗</span><span>이슈브리프</span></a><span>저장된 보고서 · 새 탭 미리보기</span></header><section className="saved-report-header"><span className="step-label">SAVED REPORT</span><h1>{report.title}</h1><p>저장 시각 {new Date(report.createdAt).toLocaleString("ko-KR")} · 검색 기간 {report.period}</p><div className="saved-report-meta"><span>분석 이슈: {report.query}</span>{report.templateFileName && <span>적용 양식: {report.templateFileName}</span>}</div></section><div className="saved-provider-results"><ProviderReport name="OpenAI" result={report.results.openai} /><ProviderReport name="Gemini" result={report.results.gemini} /><ProviderReport name="Claude" result={report.results.claude} /></div></main>;
+  return <main className="saved-report-page"><header className="saved-report-topbar"><a className="brand" href="/"><span className="brand-mark">↗</span><span>이슈브리프</span></a><span>저장된 보고서 · 새 탭 미리보기</span></header><section className="saved-report-header"><span className="step-label">SAVED REPORT</span><h1>{report.title}</h1><p>저장 시각 {new Date(report.createdAt).toLocaleString("ko-KR")} · 검색 기간 {report.period}</p><div className="saved-report-meta"><span>분석 이슈: {report.query}</span>{report.templateFileName && <span>적용 양식: {report.templateFileName}</span>}</div><div className="export-actions"><strong>문서로 다운로드</strong><button type="button" onClick={() => void downloadReport("hwpx")} disabled={Boolean(exporting)}>{exporting === "hwpx" ? "생성 중..." : "HWPX"}</button><button type="button" onClick={() => void downloadReport("docx")} disabled={Boolean(exporting)}>{exporting === "docx" ? "생성 중..." : "DOCX"}</button><button type="button" onClick={() => void downloadReport("pdf")} disabled={Boolean(exporting)}>{exporting === "pdf" ? "생성 중..." : "PDF"}</button></div>{exportError && <div className="template-error" role="alert">{exportError}</div>}<p className="export-note">저장된 분석 양식의 제목·항목 순서를 기준으로 문서를 생성합니다.</p></section><div className="saved-provider-results"><ProviderReport name="OpenAI" result={report.results.openai} /><ProviderReport name="Gemini" result={report.results.gemini} /><ProviderReport name="Claude" result={report.results.claude} /></div></main>;
 }

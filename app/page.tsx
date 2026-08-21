@@ -228,6 +228,7 @@ export default function Home() {
       period,
       sources,
       templateFileName: templateFileName || undefined,
+      templateMarkdown: templateMarkdown || undefined,
       createdAt: new Date().toISOString(),
       results: searchResults,
     };
@@ -306,6 +307,7 @@ export default function Home() {
       </header>
       <section className="intro"><div className="eyebrow">ISSUE RESPONSE / DRAFT BUILDER</div><h1>복잡한 이슈를<br /><em>한 장의 보고서</em>로 정리하세요.</h1><p>키워드나 기사 본문을 입력하면 핵심 현황과 대응 방향을 빠르게 구조화합니다.</p></section>
       <div className="workspace-grid">
+        <section className="saved-reports-panel saved-reports-top" aria-labelledby="saved-reports-title"><div className="saved-reports-heading"><div><span className="step-label">SAVED</span><h2 id="saved-reports-title">저장된 보고서</h2></div><span>{savedReports.length}개</span></div>{savedReports.length ? <div className="saved-reports-list">{savedReports.map((report) => <article className="saved-report-row" key={report.id}><div><strong>{report.title}</strong><small>{new Date(report.createdAt).toLocaleString("ko-KR")}</small></div><button type="button" onClick={() => openSavedReport(report.id)}>새 탭에서 확인</button></article>)}</div> : <p className="saved-reports-empty">저장한 보고서가 여기에 표시됩니다.</p>}</section>
         <form className="control-card" onSubmit={handleSubmit}>
           <div className="card-heading"><div><span className="step-label">01</span><h2>분석할 이슈를 입력하세요</h2></div><span className="required">필수</span></div>
           <label className="field-label" htmlFor="issue-input">키워드 또는 뉴스 기사 본문</label>
@@ -348,7 +350,6 @@ export default function Home() {
         <section className="result-card" aria-live="polite">
           <div className="result-header"><div><span className="step-label">RESULT</span><h2>생성 결과</h2></div>{searchResults ? <div className="result-header-actions"><button type="button" className="save-report-button" onClick={() => void handleSaveReport()} disabled={savingReport}>{savingReport ? "저장 중..." : savedReportId ? "저장 완료" : "보고서 저장"}</button>{savedReportId && <button type="button" className="open-report-button" onClick={handleOpenSavedReport}>새 탭에서 확인</button>}<button type="button" className="copy-all-button" onClick={() => void copyText(allResultsCopyText(), "all")}>{copiedResult === "all" ? "전체 복사 완료" : "전체 결과 복사"}</button><span className="preview-badge">PREVIEW</span></div> : <span className="preview-badge">PREVIEW</span>}</div>
           {!generated ? <div className="empty-state"><div className="empty-icon">✦</div><h3>보고서 초안이 이곳에 나타납니다</h3><p>왼쪽에서 이슈와 조건을 설정한 뒤<br />생성 버튼을 눌러보세요.</p><div className="empty-line" /><span>OpenAI·Gemini·Claude 결과가 각각 표시됩니다</span></div> : searchStatus === "loading" ? <div className="empty-state loading-state"><div className="empty-icon">⌁</div><h3>검색 엔진과 Claude에서 자료를 찾고 있습니다</h3><p>입력한 API 키가 있는 제공자를<br />가능한 경우 동시에 호출합니다.</p><span className="loading-note">최대 120초까지 걸릴 수 있습니다.</span></div> : searchResults ? <div className="provider-results"><ProviderResultCard name="OpenAI" result={searchResults.openai} copied={copiedResult === "openai"} onCopy={() => void copyText(providerCopyText("OpenAI", searchResults.openai), "openai")} /><ProviderResultCard name="Gemini" result={searchResults.gemini} copied={copiedResult === "gemini"} onCopy={() => void copyText(providerCopyText("Gemini", searchResults.gemini), "gemini")} /><ProviderResultCard name="Claude" result={searchResults.claude} copied={copiedResult === "claude"} onCopy={() => void copyText(providerCopyText("Claude", searchResults.claude), "claude")} /></div> : <div className="empty-state"><div className="empty-icon">!</div><h3>검색 결과를 표시할 수 없습니다</h3><p>왼쪽 오류 안내를 확인한 뒤 다시 시도해주세요.</p></div>}
-          <section className="saved-reports-panel" aria-labelledby="saved-reports-title"><div className="saved-reports-heading"><div><span className="step-label">SAVED</span><h2 id="saved-reports-title">저장된 보고서</h2></div><span>{savedReports.length}개</span></div>{savedReports.length ? <div className="saved-reports-list">{savedReports.map((report) => <article className="saved-report-row" key={report.id}><div><strong>{report.title}</strong><small>{new Date(report.createdAt).toLocaleString("ko-KR")}</small></div><button type="button" onClick={() => openSavedReport(report.id)}>새 탭에서 확인</button></article>)}</div> : <p className="saved-reports-empty">저장한 보고서가 여기에 표시됩니다.</p>}</section>
         </section>
       </div>
       <footer className="page-footer"><span>이슈브리프</span><span>빠른 판단을 위한 보고서 초안 도구</span></footer>

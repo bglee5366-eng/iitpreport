@@ -16,7 +16,7 @@ function ownerId(request: Request) {
 }
 
 function reportFromRow(row: any): StoredReport {
-  return { id: row.id, title: row.title, query: row.query, reportType: row.report_type, period: row.period, sources: Array.isArray(row.sources) ? row.sources : [], templateFileName: row.template_file_name ?? undefined, createdAt: row.created_at, results: row.results };
+  return { id: row.id, title: row.title, query: row.query, reportType: row.report_type, period: row.period, sources: Array.isArray(row.sources) ? row.sources : [], templateFileName: row.template_file_name ?? undefined, templateMarkdown: row.template_markdown ?? undefined, createdAt: row.created_at, results: row.results };
 }
 
 async function supabaseRequest(path: string, init: RequestInit = {}) {
@@ -33,7 +33,7 @@ export async function POST(request: Request) {
   try {
     const input = await request.json() as StoredReport;
     if (!input.title || !input.query || !input.results) return Response.json({ error: "저장할 보고서 데이터가 부족합니다." }, { status: 400 });
-    const response = await supabaseRequest("reports", { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ owner_id: ownerId(request), title: input.title, query: input.query, report_type: input.reportType, period: input.period, sources: input.sources ?? [], template_file_name: input.templateFileName ?? null, results: input.results }) });
+    const response = await supabaseRequest("reports", { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ owner_id: ownerId(request), title: input.title, query: input.query, report_type: input.reportType, period: input.period, sources: input.sources ?? [], template_file_name: input.templateFileName ?? null, template_markdown: input.templateMarkdown ?? null, results: input.results }) });
     if (!response.ok) return Response.json({ error: `Supabase 저장 실패 (${response.status})`, detail: await response.text() }, { status: 502 });
     const rows = await response.json() as any[];
     return Response.json({ configured: true, report: reportFromRow(rows[0]) });
